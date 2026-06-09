@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
-import { Camera, Image as ImageIcon, Check, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { Camera, Image as ImageIcon, Check, Loader2, Sparkles, AlertCircle, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { insertPrenda, uploadPrendaImage } from '../lib/db';
 import { compressImage, isAllowedImageType } from '../utils/image';
 import type { Prenda } from '../types';
@@ -14,11 +15,13 @@ const MAX_RAW_BYTES        = 20 * 1024 * 1024;
 // 150 KB post-compression cap — keeps free-tier Supabase & LocalStorage healthy
 const MAX_COMPRESSED_BYTES = 150 * 1024;
 
-const CATEGORIES: { value: Prenda['category']; label: string }[] = [
-  { value: 'superior', label: 'Prenda Superior (Remera, Camisa, Suéter)' },
-  { value: 'inferior', label: 'Prenda Inferior (Pantalón, Jean, Pollera)' },
-  { value: 'abrigo',   label: 'Abrigo (Campera, Tapado, Blazer)' },
-  { value: 'calzado',  label: 'Calzado (Zapatillas, Botas, Sandalias)' },
+const CATEGORIES: { value: Prenda['category']; label: string; hint: string; icon: LucideIcon }[] = [
+  { value: 'superior',   label: 'Superior',   hint: 'Remera, Camisa, Suéter',       icon: Shirt },
+  { value: 'inferior',   label: 'Inferior',   hint: 'Pantalón, Jean, Pollera',      icon: RectangleHorizontal },
+  { value: 'full_body',  label: 'Full Body',  hint: 'Vestido, Mono, Enterito',      icon: PersonStanding },
+  { value: 'abrigo',     label: 'Abrigo',     hint: 'Campera, Tapado, Blazer',      icon: Layers },
+  { value: 'calzado',    label: 'Calzado',    hint: 'Zapatillas, Botas, Sandalias', icon: Footprints },
+  { value: 'accesorios', label: 'Accesorios', hint: 'Joyas, Bolsos, Complementos',  icon: Sparkles },
 ];
 
 const CLIMAS: { value: Prenda['clima']; label: string }[] = [
@@ -283,18 +286,26 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           transition: 'opacity 0.3s ease',
         }}
       >
-        {/* Category */}
+        {/* Category — icon chips */}
         <div className="form-group">
           <label className="form-label">Categoría</label>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value as Prenda['category'])}
-            style={{ padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.95rem', outline: 'none' }}
-          >
-            {CATEGORIES.map(cat => (
-              <option key={cat.value} value={cat.value}>{cat.label}</option>
-            ))}
-          </select>
+          <div className="chip-container">
+            {CATEGORIES.map(cat => {
+              const Icon = cat.icon;
+              return (
+                <button
+                  key={cat.value}
+                  type="button"
+                  className={`chip ${category === cat.value ? 'selected' : ''}`}
+                  onClick={() => setCategory(cat.value)}
+                  title={cat.hint}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Icon size={15} /> {cat.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Clima — single-select chips */}

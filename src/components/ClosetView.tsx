@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Trash2, ShoppingBag, Sparkles } from 'lucide-react';
+import { Trash2, ShoppingBag, Sparkles, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, LayoutGrid } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { Prenda } from '../types';
 import { deletePrenda } from '../lib/db';
 
@@ -8,19 +9,23 @@ interface ClosetViewProps {
   onRefresh: () => void;
 }
 
-const CATEGORY_TABS = [
-  { value: 'todos',    label: 'Todos' },
-  { value: 'superior', label: 'Tops' },
-  { value: 'inferior', label: 'Bottoms' },
-  { value: 'abrigo',   label: 'Abrigos' },
-  { value: 'calzado',  label: 'Calzado' },
+const CATEGORY_TABS: { value: string; label: string; icon: LucideIcon }[] = [
+  { value: 'todos',      label: 'Todos',      icon: LayoutGrid },
+  { value: 'superior',   label: 'Tops',       icon: Shirt },
+  { value: 'inferior',   label: 'Bottoms',    icon: RectangleHorizontal },
+  { value: 'full_body',  label: 'Enteros',    icon: PersonStanding },
+  { value: 'abrigo',     label: 'Abrigos',    icon: Layers },
+  { value: 'calzado',    label: 'Calzado',    icon: Footprints },
+  { value: 'accesorios', label: 'Accesorios', icon: Sparkles },
 ];
 
 const CATEGORY_LABEL: Record<Prenda['category'], string> = {
-  superior: 'Prenda Superior',
-  inferior: 'Prenda Inferior',
-  abrigo:   'Abrigo',
-  calzado:  'Calzado',
+  superior:   'Prenda Superior',
+  inferior:   'Prenda Inferior',
+  full_body:  'Prenda Entera',
+  abrigo:     'Abrigo',
+  calzado:    'Calzado',
+  accesorios: 'Accesorio',
 };
 
 export function ClosetView({ items, onRefresh }: ClosetViewProps) {
@@ -76,14 +81,15 @@ export function ClosetView({ items, onRefresh }: ClosetViewProps) {
       >
         {CATEGORY_TABS.map(tab => {
           const count = getCount(tab.value);
+          const Icon = tab.icon;
           return (
             <button
               key={tab.value}
               className={`chip ${activeTab === tab.value ? 'selected' : ''}`}
               onClick={() => setActiveTab(tab.value)}
-              style={{ flexShrink: 0, padding: '8px 14px', fontSize: '0.83rem', whiteSpace: 'nowrap' }}
+              style={{ flexShrink: 0, padding: '8px 14px', fontSize: '0.83rem', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             >
-              {tab.label} ({count})
+              <Icon size={13} /> {tab.label} ({count})
             </button>
           );
         })}

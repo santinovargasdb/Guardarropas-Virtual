@@ -5,7 +5,8 @@ import type { Prenda, OutfitFavorito } from '../types';
 // LocalStorage migration + one-time demo refresh.
 // v4: official styles (Jirai, Gotico, Soft, Cute core, Chill, Boliche).
 // v5: primary/secondary colour roles + colour-rich demo data.
-const SCHEMA_VERSION = 'v5';
+// v6: new categories full_body (vestidos/monos) & accesorios (joyas/bolsos).
+const SCHEMA_VERSION = 'v6';
 const LS_SCHEMA_KEY  = 'wardrobe_schema_version';
 
 // One-time demo-seeding marker. Stores the SCHEMA_VERSION it ran under, so a
@@ -18,7 +19,8 @@ const SEED_FLAG_KEY  = 'wardrobe_seeded';
 // old LocalStorage records are silently migrated on first read.
 
 function toCategory(v: unknown): Prenda['category'] {
-  if (v === 'superior' || v === 'inferior' || v === 'abrigo' || v === 'calzado') return v;
+  if (v === 'superior' || v === 'inferior' || v === 'abrigo' ||
+      v === 'calzado'  || v === 'full_body' || v === 'accesorios') return v;
   return 'superior';
 }
 
@@ -212,6 +214,34 @@ const MOCK_PRENDAS: Prenda[] = [
     secondary_colors: ['#1A1A1A'],
     notas_ia: 'Pantalón deportivo de corte ajustado, tela elástica cómoda. Para looks activos y urbanos.',
     tags_ia: ['deportivo', 'elástico', 'comfy', 'activo'],
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'mock-11',
+    image_url: 'https://images.unsplash.com/photo-1485968579580-b6d095142e6e?w=600&auto=format&fit=crop&q=70',
+    category: 'full_body',
+    clima: 'templado',
+    formality: 'casual',
+    styles: ['Chill', 'Cute core'],
+    colors: ['#FFFFFF', '#EAD9C0'],
+    primary_colors: ['#FFFFFF'],
+    secondary_colors: ['#EAD9C0'],
+    notas_ia: 'Mono enterizo blanco de líneas minimalistas, fluido y fresco. Una pieza lista para combinar con un solo gesto.',
+    tags_ia: ['mono', 'enterito', 'minimalista', 'blanco'],
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'mock-12',
+    image_url: 'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=600&auto=format&fit=crop&q=70',
+    category: 'accesorios',
+    clima: 'templado',
+    formality: 'casual',
+    styles: ['Soft', 'Jirai'],
+    colors: ['#E1AD01', '#F5EBE0'],
+    primary_colors: ['#E1AD01'],
+    secondary_colors: ['#F5EBE0'],
+    notas_ia: 'Collar de oro delicado, cadena fina con dije sutil. El detalle que eleva cualquier look.',
+    tags_ia: ['collar', 'oro', 'delicado', 'joya'],
     created_at: new Date().toISOString(),
   },
 ];

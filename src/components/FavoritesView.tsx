@@ -11,10 +11,12 @@ interface FavoritesViewProps {
 }
 
 const CATEGORY_LABEL: Record<Prenda['category'], string> = {
-  superior: 'Top',
-  inferior: 'Bottom',
-  abrigo:   'Abrigo',
-  calzado:  'Calzado',
+  superior:   'Top',
+  inferior:   'Bottom',
+  full_body:  'Entero',
+  abrigo:     'Abrigo',
+  calzado:    'Calzado',
+  accesorios: 'Acc.',
 };
 
 export function FavoritesView({ favorites, allItems, onRefresh, onNavigateToCombinar }: FavoritesViewProps) {
