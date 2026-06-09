@@ -1,7 +1,7 @@
 export interface Prenda {
   id: string;
   image_url: string;
-  category: 'superior' | 'inferior' | 'abrigo' | 'calzado' | 'full_body' | 'accesorios';
+  category: 'superior' | 'inferior' | 'abrigo' | 'calzado' | 'full_body' | 'accesorios' | 'carteras';
   clima: 'calor' | 'frio' | 'templado';
   formality: 'formal' | 'casual' | 'deportivo';
   styles: string[];

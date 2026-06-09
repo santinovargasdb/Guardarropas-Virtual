@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
-import { Camera, Image as ImageIcon, Check, Loader2, Sparkles, AlertCircle, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints } from 'lucide-react';
+import { Camera, Image as ImageIcon, Check, Loader2, Sparkles, AlertCircle, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { insertPrenda, uploadPrendaImage } from '../lib/db';
 import { compressImage, isAllowedImageType } from '../utils/image';
@@ -21,7 +21,8 @@ const CATEGORIES: { value: Prenda['category']; label: string; hint: string; icon
   { value: 'full_body',  label: 'Full Body',  hint: 'Vestido, Mono, Enterito',      icon: PersonStanding },
   { value: 'abrigo',     label: 'Abrigo',     hint: 'Campera, Tapado, Blazer',      icon: Layers },
   { value: 'calzado',    label: 'Calzado',    hint: 'Zapatillas, Botas, Sandalias', icon: Footprints },
-  { value: 'accesorios', label: 'Accesorios', hint: 'Joyas, Bolsos, Complementos',  icon: Sparkles },
+  { value: 'accesorios', label: 'Accesorios', hint: 'Joyas, Anteojos, Cintos',      icon: Sparkles },
+  { value: 'carteras',   label: 'Carteras',   hint: 'Carteras, Bolsos, Mochilas',   icon: ShoppingBag },
 ];
 
 const CLIMAS: { value: Prenda['clima']; label: string }[] = [

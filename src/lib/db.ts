@@ -6,7 +6,8 @@ import type { Prenda, OutfitFavorito } from '../types';
 // v4: official styles (Jirai, Gotico, Soft, Cute core, Chill, Boliche).
 // v5: primary/secondary colour roles + colour-rich demo data.
 // v6: new categories full_body (vestidos/monos) & accesorios (joyas/bolsos).
-const SCHEMA_VERSION = 'v6';
+// v7: new category carteras (bolsos) + one example item per category.
+const SCHEMA_VERSION = 'v7';
 const LS_SCHEMA_KEY  = 'wardrobe_schema_version';
 
 // One-time demo-seeding marker. Stores the SCHEMA_VERSION it ran under, so a
@@ -19,8 +20,9 @@ const SEED_FLAG_KEY  = 'wardrobe_seeded';
 // old LocalStorage records are silently migrated on first read.
 
 function toCategory(v: unknown): Prenda['category'] {
-  if (v === 'superior' || v === 'inferior' || v === 'abrigo' ||
-      v === 'calzado'  || v === 'full_body' || v === 'accesorios') return v;
+  if (v === 'superior' || v === 'inferior'  || v === 'abrigo'     ||
+      v === 'calzado'  || v === 'full_body' || v === 'accesorios' ||
+      v === 'carteras') return v;
   return 'superior';
 }
 
@@ -242,6 +244,34 @@ const MOCK_PRENDAS: Prenda[] = [
     secondary_colors: ['#F5EBE0'],
     notas_ia: 'Collar de oro delicado, cadena fina con dije sutil. El detalle que eleva cualquier look.',
     tags_ia: ['collar', 'oro', 'delicado', 'joya'],
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'mock-13',
+    image_url: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&auto=format&fit=crop&q=70',
+    category: 'carteras',
+    clima: 'templado',
+    formality: 'casual',
+    styles: ['Chill', 'Boliche'],
+    colors: ['#704214', '#1A1A1A'],
+    primary_colors: ['#704214'],
+    secondary_colors: ['#1A1A1A'],
+    notas_ia: 'Cartera de cuero camel con cadena dorada, tamaño medio. Versátil para el día y la noche.',
+    tags_ia: ['cartera', 'cuero', 'camel', 'cadena'],
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'mock-14',
+    image_url: 'https://images.unsplash.com/photo-1577803645773-f96470509666?w=600&auto=format&fit=crop&q=70',
+    category: 'accesorios',
+    clima: 'templado',
+    formality: 'casual',
+    styles: ['Boliche', 'Jirai'],
+    colors: ['#1A1A1A'],
+    primary_colors: ['#1A1A1A'],
+    secondary_colors: [],
+    notas_ia: 'Anteojos de sol negros de montura redonda, una statement piece para la cabeza. Dan actitud al instante.',
+    tags_ia: ['anteojos', 'sol', 'cabeza', 'negro'],
     created_at: new Date().toISOString(),
   },
 ];

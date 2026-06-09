@@ -17,6 +17,7 @@ const CATEGORY_LABEL: Record<Prenda['category'], string> = {
   abrigo:     'Abrigo',
   calzado:    'Calzado',
   accesorios: 'Acc.',
+  carteras:   'Cartera',
 };
 
 export function FavoritesView({ favorites, allItems, onRefresh, onNavigateToCombinar }: FavoritesViewProps) {

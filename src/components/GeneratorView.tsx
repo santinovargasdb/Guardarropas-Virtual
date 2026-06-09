@@ -15,6 +15,7 @@ type OutfitState = {
   abrigo?:     Prenda;
   calzado?:    Prenda;
   accesorios?: Prenda;
+  carteras?:   Prenda;
 };
 
 // Preselect climate based on Argentine Southern Hemisphere seasons.
@@ -157,7 +158,7 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
   const colorTiersFor = (category: keyof OutfitState): string[][] => {
     // Accent slots (calzado, accesorios) lead with the secondary palette and then
     // harmonise back to the primaries; everything else leads with the primaries.
-    if (category === 'calzado' || category === 'accesorios') return [secondaryColors, primaryColors];
+    if (category === 'calzado' || category === 'accesorios' || category === 'carteras') return [secondaryColors, primaryColors];
     return [primaryColors, secondaryColors]; // superior, inferior, full_body, abrigo
   };
 
@@ -206,8 +207,9 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         full_body: basePool.filter(i => i.category === 'full_body'),
         abrigo:    basePool.filter(i => i.category === 'abrigo'),
         calzado:   basePool.filter(i => i.category === 'calzado'),
-        // Accessories aren't weather-dependent → match on formality only (clima-agnostic).
+        // Accessories & bags aren't weather-dependent → match on formality only.
         accesorios: items.filter(i => i.category === 'accesorios' && i.formality === selectedFormality),
+        carteras:   items.filter(i => i.category === 'carteras'   && i.formality === selectedFormality),
       };
 
       const rand = (arr: Prenda[]): Prenda => arr[Math.floor(Math.random() * arr.length)];
@@ -292,6 +294,11 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         outfit.accesorios = rand(slotPool('accesorios', byCat.accesorios));
       }
 
+      // Carteras: always included when there is stock (both routes).
+      if (byCat.carteras.length > 0) {
+        outfit.carteras = rand(slotPool('carteras', byCat.carteras));
+      }
+
       setGeneratedOutfit(outfit);
       setIsGenerating(false);
       setIsShuffling(false);
@@ -306,8 +313,8 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       item =>
         item.category === category &&
         item.formality === selectedFormality &&
-        // Accessories ignore clima (jewelry/bags aren't weather-dependent).
-        (category === 'accesorios' || item.clima === selectedClima)
+        // Accessories & bags ignore clima (not weather-dependent).
+        (category === 'accesorios' || category === 'carteras' || item.clima === selectedClima)
     );
 
     // Same style + chromatic triage as generation, with graceful fallbacks.
@@ -334,6 +341,7 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         generatedOutfit.abrigo?.id,
         generatedOutfit.calzado?.id,
         generatedOutfit.accesorios?.id,
+        generatedOutfit.carteras?.id,
       ].filter((id): id is string => id !== undefined);
 
       await insertOutfitFavorito(itemIds, outfitName.trim() || undefined);
@@ -446,58 +454,97 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         <div className={`fade-in${isShuffling ? ' shuffling' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative' }}>
 
-            {/* Body: Route B (one-piece) shows a single highlighted card; Route A
-                shows superior + inferior side by side. */}
-            {generatedOutfit.full_body ? (
-              <OutfitItemCard
-                label="Prenda Entera"
-                item={generatedOutfit.full_body}
-                onShuffle={() => handleShuffleItem('full_body')}
-              />
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                {generatedOutfit.superior && (
+            {/* ── FILA 1 · Cabeza: accesorio centrado arriba ── */}
+            {generatedOutfit.accesorios && (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div style={{ width: '50%' }}>
                   <OutfitItemCard
-                    label="Prenda Superior"
-                    item={generatedOutfit.superior}
-                    onShuffle={() => handleShuffleItem('superior')}
+                    label="Accesorio"
+                    item={generatedOutfit.accesorios}
+                    onShuffle={() => handleShuffleItem('accesorios')}
                   />
-                )}
-                {generatedOutfit.inferior && (
-                  <OutfitItemCard
-                    label="Prenda Inferior"
-                    item={generatedOutfit.inferior}
-                    onShuffle={() => handleShuffleItem('inferior')}
-                  />
-                )}
+                </div>
               </div>
             )}
 
-            {/* Bottom row: abrigo + calzado */}
-            <div style={{ display: 'grid', gridTemplateColumns: generatedOutfit.abrigo ? '1fr 1fr' : '1fr', gap: '12px' }}>
-              {generatedOutfit.abrigo && (
-                <OutfitItemCard
-                  label="Abrigo"
-                  item={generatedOutfit.abrigo}
-                  onShuffle={() => handleShuffleItem('abrigo')}
-                />
+            {/* ── FILA 2-3 · Torso + Baja: grilla anatómica de 2 columnas ──
+                Ruta A: superior/inferior (izq) · abrigo/cartera (der)
+                Ruta B: full_body ocupa las 2 filas (izq) · abrigo/cartera (der) */}
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gridTemplateAreas: generatedOutfit.full_body
+                  ? '"fullbody abrigo" "fullbody cartera"'
+                  : '"superior abrigo" "inferior cartera"',
+                gap: '12px',
+                alignItems: 'stretch',
+              }}
+            >
+              {generatedOutfit.full_body ? (
+                <div style={{ gridArea: 'fullbody', display: 'flex' }}>
+                  <OutfitItemCard
+                    label="Prenda Entera"
+                    item={generatedOutfit.full_body}
+                    onShuffle={() => handleShuffleItem('full_body')}
+                    fill
+                  />
+                </div>
+              ) : (
+                <>
+                  {generatedOutfit.superior && (
+                    <div style={{ gridArea: 'superior' }}>
+                      <OutfitItemCard
+                        label="Prenda Superior"
+                        item={generatedOutfit.superior}
+                        onShuffle={() => handleShuffleItem('superior')}
+                      />
+                    </div>
+                  )}
+                  {generatedOutfit.inferior && (
+                    <div style={{ gridArea: 'inferior' }}>
+                      <OutfitItemCard
+                        label="Prenda Inferior"
+                        item={generatedOutfit.inferior}
+                        onShuffle={() => handleShuffleItem('inferior')}
+                      />
+                    </div>
+                  )}
+                </>
               )}
-              {generatedOutfit.calzado && (
-                <OutfitItemCard
-                  label="Calzado"
-                  item={generatedOutfit.calzado}
-                  onShuffle={() => handleShuffleItem('calzado')}
-                />
+
+              {generatedOutfit.abrigo && (
+                <div style={{ gridArea: 'abrigo' }}>
+                  <OutfitItemCard
+                    label="Abrigo"
+                    item={generatedOutfit.abrigo}
+                    onShuffle={() => handleShuffleItem('abrigo')}
+                  />
+                </div>
+              )}
+
+              {generatedOutfit.carteras && (
+                <div style={{ gridArea: 'cartera' }}>
+                  <OutfitItemCard
+                    label="Cartera"
+                    item={generatedOutfit.carteras}
+                    onShuffle={() => handleShuffleItem('carteras')}
+                  />
+                </div>
               )}
             </div>
 
-            {/* Optional accessories accent */}
-            {generatedOutfit.accesorios && (
-              <OutfitItemCard
-                label="Accesorio"
-                item={generatedOutfit.accesorios}
-                onShuffle={() => handleShuffleItem('accesorios')}
-              />
+            {/* ── FILA 4 · Pies: calzado centrado abajo ── */}
+            {generatedOutfit.calzado && (
+              <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div style={{ width: '50%' }}>
+                  <OutfitItemCard
+                    label="Calzado"
+                    item={generatedOutfit.calzado}
+                    onShuffle={() => handleShuffleItem('calzado')}
+                  />
+                </div>
+              </div>
             )}
           </div>
 
@@ -588,17 +635,20 @@ interface OutfitItemCardProps {
   item: Prenda;
   onShuffle: () => void;
   isSmall?: boolean;
+  fill?: boolean;
 }
 
-function OutfitItemCard({ label, item, onShuffle, isSmall }: OutfitItemCardProps) {
+function OutfitItemCard({ label, item, onShuffle, isSmall, fill }: OutfitItemCardProps) {
   return (
     <div
       className="prenda-card pop-in"
-      style={{ flexDirection: isSmall ? 'row' : 'column', height: isSmall ? '80px' : 'auto', position: 'relative' }}
+      style={{ flexDirection: isSmall ? 'row' : 'column', height: fill ? '100%' : (isSmall ? '80px' : 'auto'), position: 'relative' }}
     >
       <div
         className="prenda-img-container"
-        style={{ aspectRatio: isSmall ? '1/1' : '3/4', width: isSmall ? '80px' : '100%' }}
+        style={fill
+          ? { flex: 1, width: '100%', minHeight: '220px' }
+          : { aspectRatio: isSmall ? '1/1' : '3/4', width: isSmall ? '80px' : '100%' }}
       >
         <img src={item.image_url} alt={label} className="prenda-img" />
       </div>

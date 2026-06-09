@@ -17,6 +17,7 @@ const CATEGORY_TABS: { value: string; label: string; icon: LucideIcon }[] = [
   { value: 'abrigo',     label: 'Abrigos',    icon: Layers },
   { value: 'calzado',    label: 'Calzado',    icon: Footprints },
   { value: 'accesorios', label: 'Accesorios', icon: Sparkles },
+  { value: 'carteras',   label: 'Carteras',   icon: ShoppingBag },
 ];
 
 const CATEGORY_LABEL: Record<Prenda['category'], string> = {
@@ -26,6 +27,7 @@ const CATEGORY_LABEL: Record<Prenda['category'], string> = {
   abrigo:     'Abrigo',
   calzado:    'Calzado',
   accesorios: 'Accesorio',
+  carteras:   'Cartera',
 };
 
 export function ClosetView({ items, onRefresh }: ClosetViewProps) {
