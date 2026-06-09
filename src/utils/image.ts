@@ -1,13 +1,24 @@
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+type AllowedMime = (typeof ALLOWED_MIME_TYPES)[number];
+
+export function isAllowedImageType(file: File): file is File & { type: AllowedMime } {
+  return (ALLOWED_MIME_TYPES as readonly string[]).includes(file.type);
+}
+
 /**
- * Compresses an image file by resizing it and lowering JPEG quality.
- * This is crucial for saving Supabase Storage space (free tier) and
- * keeping LocalStorage Base64 strings small.
+ * Compresses an image via Canvas, capping dimensions and JPEG quality.
+ * Targets < 150 KB per garment photo to protect Supabase free-tier storage
+ * and keep LocalStorage Base64 strings small.
+ *
+ * Uses a proper "contain" scale — the shorter-side constraint determines the
+ * scale factor, so landscape, portrait, and square photos all fit within the
+ * maxWidth × maxHeight box while preserving aspect ratio.
  */
 export function compressImage(
   file: File,
-  maxWidth = 600,
-  maxHeight = 800,
-  quality = 0.7
+  maxWidth = 900,
+  maxHeight = 900,
+  quality = 0.75
 ): Promise<File> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -16,54 +27,44 @@ export function compressImage(
       const img = new Image();
       img.src = event.target?.result as string;
       img.onload = () => {
+        // Contain-fit: find the largest uniform scale that keeps both
+        // dimensions within their respective maxima
+        const scale = Math.min(
+          img.width  <= maxWidth  ? 1 : maxWidth  / img.width,
+          img.height <= maxHeight ? 1 : maxHeight / img.height
+        );
+        const width  = Math.round(img.width  * scale);
+        const height = Math.round(img.height * scale);
+
         const canvas = document.createElement('canvas');
-        let width = img.width;
-        let height = img.height;
-
-        // Calculate new dimensions maintaining aspect ratio
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
-        }
-
-        canvas.width = width;
+        canvas.width  = width;
         canvas.height = height;
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          reject(new Error('Canvas 2d context not available'));
+          reject(new Error('Canvas 2D context not available'));
           return;
         }
 
-        // Draw image in canvas
         ctx.drawImage(img, 0, 0, width, height);
 
-        // Export to Blob
         canvas.toBlob(
           (blob) => {
             if (blob) {
-              const compressedFile = new File([blob], file.name, {
+              resolve(new File([blob], file.name, {
                 type: 'image/jpeg',
-                lastModified: Date.now()
-              });
-              resolve(compressedFile);
+                lastModified: Date.now(),
+              }));
             } else {
-              reject(new Error('Canvas conversion to blob failed'));
+              reject(new Error('Canvas → Blob conversion failed'));
             }
           },
           'image/jpeg',
           quality
         );
       };
-      img.onerror = (err) => reject(err);
+      img.onerror = reject;
     };
-    reader.onerror = (err) => reject(err);
+    reader.onerror = reject;
   });
 }

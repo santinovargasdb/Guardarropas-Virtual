@@ -1,122 +1,143 @@
-import React, { useState, useRef } from 'react';
-import { Camera, Image as ImageIcon, Check, Loader2, Sparkles } from 'lucide-react';
-import { addPrenda, uploadPrendaImage } from '../lib/db';
-import { compressImage } from '../utils/image';
+import { useState, useEffect, useRef } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
+import { Camera, Image as ImageIcon, Check, Loader2, Sparkles, AlertCircle } from 'lucide-react';
+import { insertPrenda, uploadPrendaImage } from '../lib/db';
+import { compressImage, isAllowedImageType } from '../utils/image';
 import type { Prenda } from '../types';
 
 interface UploadFormProps {
   onSuccess: () => void;
 }
 
-const CATEGORIES = [
+// 20 MB raw input guard — protects against accidental RAW / video files
+const MAX_RAW_BYTES        = 20 * 1024 * 1024;
+// 150 KB post-compression cap — keeps free-tier Supabase & LocalStorage healthy
+const MAX_COMPRESSED_BYTES = 150 * 1024;
+
+const CATEGORIES: { value: Prenda['category']; label: string }[] = [
   { value: 'superior', label: 'Prenda Superior (Remera, Camisa, Suéter)' },
   { value: 'inferior', label: 'Prenda Inferior (Pantalón, Jean, Pollera)' },
-  { value: 'abrigo', label: 'Abrigo (Campera, Tapado, Blazer)' },
-  { value: 'calzado', label: 'Calzado (Zapatillas, Botas, Sandalias)' },
-  { value: 'monoprenda', label: 'Monoprenda (Vestido, Enterito)' },
-  { value: 'accesorio', label: 'Accesorio (Cartera, Bufanda, Anteojos)' },
+  { value: 'abrigo',   label: 'Abrigo (Campera, Tapado, Blazer)' },
+  { value: 'calzado',  label: 'Calzado (Zapatillas, Botas, Sandalias)' },
 ];
 
-const WEATHERS: { value: Prenda['weather'][number]; label: string }[] = [
-  { value: 'calido', label: '☀️ Cálido' },
+const CLIMAS: { value: Prenda['clima']; label: string }[] = [
+  { value: 'calor',    label: '☀️ Calor' },
   { value: 'templado', label: '⛅ Templado' },
-  { value: 'frio', label: '❄️ Frío' },
-  { value: 'lluvioso', label: '🌧️ Lluvioso' },
+  { value: 'frio',     label: '❄️ Frío' },
 ];
 
-const FORMALITIES: { value: Prenda['formality'][number]; label: string }[] = [
-  { value: 'casual', label: '✨ Casual' },
-  { value: 'trabajo', label: '💼 Oficina / Trabajo' },
-  { value: 'formal', label: '🍸 Formal / Cóctel' },
-  { value: 'fiesta', label: '🎉 Fiesta / Salida' },
+const FORMALITIES: { value: Prenda['formality']; label: string }[] = [
+  { value: 'casual',    label: '✨ Casual' },
+  { value: 'formal',    label: '💼 Formal / Trabajo' },
+  { value: 'deportivo', label: '🏃 Deportivo' },
 ];
 
-const POPULAR_STYLES = ['minimalist', 'casual', 'romantic', 'sporty', 'elegant', 'cozy', 'streetwear', 'boho', 'edgy'];
+const POPULAR_STYLES = [
+  'minimalist', 'casual', 'romantic', 'sporty', 'elegant',
+  'cozy', 'streetwear', 'boho', 'edgy',
+];
 
 const PRESETS_COLORS = [
-  { name: 'Negro', hex: '#1A1A1A' },
-  { name: 'Blanco', hex: '#FFFFFF', hasBorder: true },
-  { name: 'Gris', hex: '#8E918F' },
-  { name: 'Crema', hex: '#F3E5AB' },
-  { name: 'Marrón', hex: '#704214' },
-  { name: 'Azul', hex: '#2A52BE' },
-  { name: 'Celeste', hex: '#87CEEB' },
-  { name: 'Verde', hex: '#2E8B57' },
+  { name: 'Negro',    hex: '#1A1A1A' },
+  { name: 'Blanco',   hex: '#FFFFFF', hasBorder: true },
+  { name: 'Gris',     hex: '#8E918F' },
+  { name: 'Crema',    hex: '#F3E5AB' },
+  { name: 'Marrón',   hex: '#704214' },
+  { name: 'Azul',     hex: '#2A52BE' },
+  { name: 'Celeste',  hex: '#87CEEB' },
+  { name: 'Verde',    hex: '#2E8B57' },
   { name: 'Bordeaux', hex: '#800020' },
-  { name: 'Rosa', hex: '#FFC0CB' },
-  { name: 'Mostaza', hex: '#E1AD01' },
+  { name: 'Rosa',     hex: '#FFC0CB' },
+  { name: 'Mostaza',  hex: '#E1AD01' },
 ];
 
+const LIGHT_SWATCHES = new Set(['#FFFFFF', '#F3E5AB', '#FFC0CB', '#87CEEB', '#E1AD01']);
+
 export function UploadForm({ onSuccess }: UploadFormProps) {
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [category, setCategory] = useState<Prenda['category']>('superior');
-  const [weather, setWeather] = useState<Prenda['weather']>(['templado']);
-  const [formality, setFormality] = useState<Prenda['formality']>(['casual']);
+  const [selectedImage,  setSelectedImage]  = useState<File | null>(null);
+  const [previewUrl,     setPreviewUrl]     = useState<string | null>(null);
+  const [category,       setCategory]       = useState<Prenda['category']>('superior');
+  const [clima,          setClima]          = useState<Prenda['clima']>('templado');
+  const [formality,      setFormality]      = useState<Prenda['formality']>('casual');
   const [selectedColors, setSelectedColors] = useState<string[]>([]);
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
-  const [customStyle, setCustomStyle] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [customStyle,    setCustomStyle]    = useState('');
+  const [isUploading,    setIsUploading]    = useState(false);
+  const [uploadSuccess,  setUploadSuccess]  = useState(false);
+  const [errorMsg,       setErrorMsg]       = useState<string | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef      = useRef<HTMLInputElement>(null);
+  const cameraInputRef    = useRef<HTMLInputElement>(null);
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedImage(file);
-      setPreviewUrl(URL.createObjectURL(file));
-      setUploadSuccess(false);
-      setErrorMsg(null);
+  // Cleanup success flash timeout on unmount to prevent memory leaks on mobile
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+    };
+  }, []);
+
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+
+  const resetForm = () => {
+    setSelectedImage(null);
+    setPreviewUrl(null);
+    setCategory('superior');
+    setClima('templado');
+    setFormality('casual');
+    setSelectedColors([]);
+    setSelectedStyles([]);
+    setCustomStyle('');
+    setErrorMsg(null);
+    if (fileInputRef.current)   fileInputRef.current.value   = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!isAllowedImageType(file)) {
+      setErrorMsg('Formato no válido. Por favor usá una foto en JPEG, PNG o WEBP.');
+      e.target.value = '';
+      return;
     }
+    if (file.size > MAX_RAW_BYTES) {
+      setErrorMsg(
+        `La foto pesa ${Math.round(file.size / (1024 * 1024))} MB y supera el límite de 20 MB. ` +
+        'Tomá la foto directamente con la cámara o elegí otra imagen.'
+      );
+      e.target.value = '';
+      return;
+    }
+
+    setSelectedImage(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setUploadSuccess(false);
+    setErrorMsg(null);
   };
 
-  const toggleWeather = (val: Prenda['weather'][number]) => {
-    setWeather(prev =>
-      prev.includes(val) ? prev.filter(w => w !== val) : [...prev, val]
-    );
-  };
+  const toggleColor = (hex: string) =>
+    setSelectedColors(prev => prev.includes(hex) ? prev.filter(c => c !== hex) : [...prev, hex]);
 
-  const toggleFormality = (val: Prenda['formality'][number]) => {
-    setFormality(prev =>
-      prev.includes(val) ? prev.filter(f => f !== val) : [...prev, val]
-    );
-  };
+  const toggleStyle = (style: string) =>
+    setSelectedStyles(prev => prev.includes(style) ? prev.filter(s => s !== style) : [...prev, style]);
 
-  const toggleColor = (hex: string) => {
-    setSelectedColors(prev =>
-      prev.includes(hex) ? prev.filter(c => c !== hex) : [...prev, hex]
-    );
-  };
-
-  const toggleStyle = (style: string) => {
-    setSelectedStyles(prev =>
-      prev.includes(style) ? prev.filter(s => s !== style) : [...prev, style]
-    );
-  };
-
-  const handleAddCustomStyle = (e: React.FormEvent) => {
+  const handleAddCustomStyle = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const styleTrim = customStyle.trim().toLowerCase();
-    if (styleTrim && !selectedStyles.includes(styleTrim)) {
-      setSelectedStyles(prev => [...prev, styleTrim]);
+    const trimmed = customStyle.trim().toLowerCase();
+    if (trimmed && !selectedStyles.includes(trimmed)) {
+      setSelectedStyles(prev => [...prev, trimmed]);
     }
     setCustomStyle('');
   };
 
+  // ── Submit ────────────────────────────────────────────────────────────────────
+
   const handleSubmit = async () => {
     if (!selectedImage) {
-      setErrorMsg('Por favor selecciona o toma una foto de la prenda.');
-      return;
-    }
-    if (weather.length === 0) {
-      setErrorMsg('Selecciona al menos una opción de clima.');
-      return;
-    }
-    if (formality.length === 0) {
-      setErrorMsg('Selecciona al menos una opción de formalidad.');
+      setErrorMsg('Por favor seleccioná o tomá una foto de la prenda.');
       return;
     }
 
@@ -124,56 +145,65 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     setErrorMsg(null);
 
     try {
-      // 1. Compress image in frontend (Canvas)
-      const compressed = await compressImage(selectedImage, 600, 800, 0.7);
+      // Step 1 — Canvas compression (900×900 max, JPEG 0.75)
+      const compressed = await compressImage(selectedImage);
 
-      // 2. Upload image (to Supabase Storage or LocalStorage Base64)
+      // Step 2 — Post-compression size gate
+      if (compressed.size > MAX_COMPRESSED_BYTES) {
+        setErrorMsg(
+          `La imagen comprimida pesa ${Math.round(compressed.size / 1024)} KB ` +
+          `y supera el límite de 150 KB. Probá con una foto con menos detalle o mejor iluminación.`
+        );
+        return;
+      }
+
+      // Step 3 — Upload to Supabase Storage or encode to Base64 for LocalStorage
       const imageUrl = await uploadPrendaImage(compressed);
 
-      // 3. Add item metadata to Database
-      await addPrenda({
+      // Step 4 — Persist garment metadata
+      await insertPrenda({
         image_url: imageUrl,
         category,
-        weather,
+        clima,
         formality,
         styles: selectedStyles,
         colors: selectedColors,
       });
 
-      // Clear form
-      setSelectedImage(null);
-      setPreviewUrl(null);
-      setWeather(['templado']);
-      setFormality(['casual']);
-      setSelectedColors([]);
-      setSelectedStyles([]);
+      resetForm();
       setUploadSuccess(true);
-      
-      // Auto-dismiss success and refresh parent
-      setTimeout(() => {
+
+      // Switch to closet view after a brief success flash
+      successTimeoutRef.current = setTimeout(() => {
         setUploadSuccess(false);
         onSuccess();
-      }, 1500);
+        successTimeoutRef.current = null;
+      }, 1800);
 
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setErrorMsg('Error al guardar la prenda. Reintenta por favor.');
+      setErrorMsg(
+        'Error de conexión: No se pudo subir la prenda. ' +
+        'Comprobá tu señal de internet e intentalo de nuevo sin perder tus datos. 📡'
+      );
     } finally {
       setIsUploading(false);
     }
   };
 
+  // ── Render ────────────────────────────────────────────────────────────────────
+
   return (
     <div className="glass-panel slide-up fade-in" style={{ padding: '24px 16px' }}>
       <h2 className="section-title" style={{ textAlign: 'center', marginBottom: '8px' }}>Subir Nueva Prenda</h2>
-      <p className="subtitle">Agrega una foto y taggea sus metadatos</p>
+      <p className="subtitle">Agrega una foto y etiquetá sus características</p>
 
-      {/* Image Upload/Capture Card */}
-      <div 
-        style={{ 
-          aspectRatio: '4/3', 
-          width: '100%', 
-          borderRadius: 'var(--radius-md)', 
+      {/* ── Image Drop Zone ─────────────────────────────────────────────── */}
+      <div
+        style={{
+          aspectRatio: '4/3',
+          width: '100%',
+          borderRadius: 'var(--radius-md)',
           border: '2px dashed var(--panel-border)',
           background: 'var(--bg-color)',
           display: 'flex',
@@ -182,71 +212,48 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           justifyContent: 'center',
           overflow: 'hidden',
           marginBottom: '20px',
-          cursor: 'pointer',
-          position: 'relative'
+          cursor: isUploading ? 'default' : 'pointer',
+          position: 'relative',
+          transition: 'opacity 0.3s ease',
+          opacity: isUploading ? 0.7 : 1,
+          pointerEvents: isUploading ? 'none' : 'auto',
         }}
         onClick={() => fileInputRef.current?.click()}
       >
         {previewUrl ? (
-          <img 
-            src={previewUrl} 
-            alt="Vista Previa" 
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-          />
+          <>
+            <img src={previewUrl} alt="Vista Previa" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            {!isUploading && (
+              <div style={{ position: 'absolute', bottom: '12px', right: '12px', background: 'rgba(0,0,0,0.6)', color: 'white', padding: '6px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 500 }}>
+                Cambiar foto
+              </div>
+            )}
+            {isUploading && (
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'white', fontWeight: 600, fontSize: '0.9rem' }}>
+                <Loader2 className="animate-spin" size={20} /> Procesando…
+              </div>
+            )}
+          </>
         ) : (
           <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-secondary)' }}>
             <ImageIcon size={48} style={{ margin: '0 auto 12px', strokeWidth: 1.5, opacity: 0.6 }} />
             <p style={{ fontWeight: 500, fontSize: '0.95rem' }}>Toca para seleccionar foto</p>
-            <p style={{ fontSize: '0.8rem', marginTop: '4px', opacity: 0.8 }}>Soporta cámara o galería</p>
-          </div>
-        )}
-
-        {previewUrl && (
-          <div 
-            style={{ 
-              position: 'absolute', 
-              bottom: '12px', 
-              right: '12px', 
-              background: 'rgba(0,0,0,0.6)', 
-              color: 'white', 
-              padding: '6px 12px', 
-              borderRadius: '20px',
-              fontSize: '0.75rem',
-              fontWeight: 500
-            }}
-          >
-            Cambiar foto
+            <p style={{ fontSize: '0.8rem', marginTop: '4px', opacity: 0.8 }}>JPEG · PNG · WEBP · Cámara</p>
           </div>
         )}
       </div>
 
       {/* Hidden file inputs */}
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleFileChange} 
-        accept="image/*" 
-        style={{ display: 'none' }} 
-      />
-      <input 
-        type="file" 
-        ref={cameraInputRef} 
-        onChange={handleFileChange} 
-        accept="image/*" 
-        capture="environment" 
-        style={{ display: 'none' }} 
-      />
+      <input type="file" ref={fileInputRef}   onChange={handleFileChange} accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} />
+      <input type="file" ref={cameraInputRef} onChange={handleFileChange} accept="image/jpeg,image/png,image/webp" capture="environment" style={{ display: 'none' }} />
 
-      {/* Secondary Camera trigger option for mobile */}
       {!previewUrl && (
         <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-          <button 
-            type="button" 
-            className="btn btn-secondary" 
-            onClick={(e) => {
-              e.stopPropagation();
-              cameraInputRef.current?.click();
-            }}
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={isUploading}
+            onClick={(e) => { e.stopPropagation(); cameraInputRef.current?.click(); }}
             style={{ flex: 1, padding: '10px' }}
           >
             <Camera size={18} /> Tomar Foto
@@ -254,25 +261,24 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
         </div>
       )}
 
-      {/* Inputs Form */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        
+      {/* ── Form fields (locked during upload) ─────────────────────────── */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px',
+          opacity: isUploading ? 0.55 : 1,
+          pointerEvents: isUploading ? 'none' : 'auto',
+          transition: 'opacity 0.3s ease',
+        }}
+      >
         {/* Category */}
         <div className="form-group">
           <label className="form-label">Categoría</label>
-          <select 
-            value={category} 
+          <select
+            value={category}
             onChange={(e) => setCategory(e.target.value as Prenda['category'])}
-            style={{
-              padding: '12px',
-              borderRadius: 'var(--radius-sm)',
-              border: '1px solid var(--panel-border)',
-              backgroundColor: 'var(--bg-color)',
-              color: 'var(--text-primary)',
-              fontFamily: 'var(--font-sans)',
-              fontSize: '0.95rem',
-              outline: 'none'
-            }}
+            style={{ padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.95rem', outline: 'none' }}
           >
             {CATEGORIES.map(cat => (
               <option key={cat.value} value={cat.value}>{cat.label}</option>
@@ -280,16 +286,16 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           </select>
         </div>
 
-        {/* Weather compatibility */}
+        {/* Clima — single-select chips */}
         <div className="form-group">
-          <label className="form-label">Clima Compatible</label>
+          <label className="form-label">Clima</label>
           <div className="chip-container">
-            {WEATHERS.map(item => (
+            {CLIMAS.map(item => (
               <button
                 key={item.value}
                 type="button"
-                className={`chip ${weather.includes(item.value) ? 'selected' : ''}`}
-                onClick={() => toggleWeather(item.value)}
+                className={`chip ${clima === item.value ? 'selected' : ''}`}
+                onClick={() => setClima(item.value)}
               >
                 {item.label}
               </button>
@@ -297,16 +303,16 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           </div>
         </div>
 
-        {/* Formality level */}
+        {/* Formality — single-select chips */}
         <div className="form-group">
-          <label className="form-label">Formalidad / Ocasión</label>
+          <label className="form-label">Ocasión</label>
           <div className="chip-container">
             {FORMALITIES.map(item => (
               <button
                 key={item.value}
                 type="button"
-                className={`chip ${formality.includes(item.value) ? 'selected' : ''}`}
-                onClick={() => toggleFormality(item.value)}
+                className={`chip ${formality === item.value ? 'selected' : ''}`}
+                onClick={() => setFormality(item.value)}
               >
                 {item.label}
               </button>
@@ -314,7 +320,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           </div>
         </div>
 
-        {/* Colors selector */}
+        {/* Colors */}
         <div className="form-group">
           <label className="form-label">Colores Predominantes</label>
           <div className="color-picker">
@@ -323,17 +329,14 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
                 key={col.hex}
                 type="button"
                 className={`color-dot ${selectedColors.includes(col.hex) ? 'selected' : ''}`}
-                style={{ 
-                  backgroundColor: col.hex, 
-                  border: col.hasBorder ? '1px solid #CCC' : undefined,
-                }}
+                style={{ backgroundColor: col.hex, border: col.hasBorder ? '1px solid #CCC' : undefined }}
                 onClick={() => toggleColor(col.hex)}
                 title={col.name}
               >
                 {selectedColors.includes(col.hex) && (
-                  <Check 
-                    size={14} 
-                    color={col.hex === '#FFFFFF' || col.hex === '#F3E5AB' || col.hex === '#FFC0CB' ? '#1A1A1A' : '#FFFFFF'} 
+                  <Check
+                    size={14}
+                    color={LIGHT_SWATCHES.has(col.hex) ? '#1A1A1A' : '#FFFFFF'}
                     style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
                   />
                 )}
@@ -342,7 +345,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           </div>
         </div>
 
-        {/* Style Tag selector */}
+        {/* Style tags */}
         <div className="form-group">
           <label className="form-label">Estilo / Tags</label>
           <div className="chip-container" style={{ marginBottom: '8px' }}>
@@ -369,78 +372,53 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
               </button>
             ))}
           </div>
+
           <form onSubmit={handleAddCustomStyle} style={{ display: 'flex', gap: '8px' }}>
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Ej: vintage, grunge"
               value={customStyle}
               onChange={(e) => setCustomStyle(e.target.value)}
-              style={{
-                flex: 1,
-                padding: '10px 12px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--panel-border)',
-                backgroundColor: 'var(--bg-color)',
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '0.9rem',
-                outline: 'none'
-              }}
+              style={{ flex: 1, padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.9rem', outline: 'none' }}
             />
-            <button 
-              type="submit" 
-              className="btn btn-secondary" 
+            <button
+              type="submit"
+              className="btn btn-secondary"
               style={{ width: 'auto', padding: '0 16px', borderRadius: 'var(--radius-sm)' }}
             >
               Agregar
             </button>
           </form>
         </div>
+      </div>
 
-        {errorMsg && (
-          <div style={{ color: 'var(--danger-color)', fontSize: '0.9rem', textAlign: 'center', marginTop: '8px', fontWeight: 500 }}>
-            {errorMsg}
-          </div>
-        )}
-
-        {/* Upload Button */}
-        <div style={{ marginTop: '12px' }}>
-          {uploadSuccess ? (
-            <div 
-              className="pop-in"
-              style={{ 
-                backgroundColor: 'var(--success-color)', 
-                color: 'white', 
-                padding: '14px', 
-                borderRadius: 'var(--radius-md)', 
-                textAlign: 'center', 
-                fontWeight: 600,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-            >
-              <Sparkles size={20} /> ¡Guardado con éxito!
-            </div>
-          ) : (
-            <button 
-              type="button" 
-              className="btn btn-primary"
-              onClick={handleSubmit}
-              disabled={isUploading}
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="animate-spin" size={18} /> Procesando Prenda...
-                </>
-              ) : (
-                'Guardar en Armario'
-              )}
-            </button>
-          )}
+      {/* ── Error panel ─────────────────────────────────────────────────── */}
+      {errorMsg && (
+        <div
+          className="fade-in"
+          style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginTop: '16px', padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(224, 122, 95, 0.35)', backgroundColor: 'rgba(224, 122, 95, 0.07)', color: 'var(--danger-color)', fontSize: '0.88rem', lineHeight: '1.45' }}
+        >
+          <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '1px' }} />
+          <span>{errorMsg}</span>
         </div>
+      )}
 
+      {/* ── Submit / Success ─────────────────────────────────────────────── */}
+      <div style={{ marginTop: '20px' }}>
+        {uploadSuccess ? (
+          <div
+            className="pop-in"
+            style={{ backgroundColor: 'var(--success-color)', color: 'white', padding: '14px', borderRadius: 'var(--radius-md)', textAlign: 'center', fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            <Sparkles size={20} /> ¡Prenda añadida al armario!
+          </div>
+        ) : (
+          <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={isUploading}>
+            {isUploading ? (
+              <><Loader2 className="animate-spin" size={18} /> Comprimiendo y guardando…</>
+            ) : 'Guardar en Armario'}
+          </button>
+        )}
       </div>
     </div>
   );

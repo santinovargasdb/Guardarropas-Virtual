@@ -12,7 +12,3 @@ export const isSupabaseConfigured =
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
-
-if (!isSupabaseConfigured) {
-  console.log('📌 Supabase no configurado. La aplicación se ejecutará en modo LocalStorage offline.');
-}

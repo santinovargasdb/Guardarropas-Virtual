@@ -1,121 +1,193 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import type { Prenda, OutfitFavorito } from '../types';
 
-// Curated aesthetic mock data for initial load in offline mode
+// Increment when the Prenda interface changes to force a LocalStorage schema reset.
+const SCHEMA_VERSION = 'v3';
+const LS_SCHEMA_KEY  = 'wardrobe_schema_version';
+
+// ── Type-safe coercers ────────────────────────────────────────────────────────
+// Each helper handles both current v3 values and legacy v1/v2 values so that
+// old LocalStorage records are silently migrated on first read.
+
+function toCategory(v: unknown): Prenda['category'] {
+  if (v === 'superior' || v === 'inferior' || v === 'abrigo' || v === 'calzado') return v;
+  return 'superior';
+}
+
+function toClima(v: unknown): Prenda['clima'] {
+  const raw = Array.isArray(v) ? v[0] : v;   // accept old array 'weather' field
+  if (raw === 'calor'    || raw === 'frio' || raw === 'templado') return raw;
+  if (raw === 'calido')   return 'calor';      // rename: calido → calor
+  if (raw === 'lluvioso') return 'templado';   // merge: lluvioso → templado
+  return 'templado';
+}
+
+function toFormality(v: unknown): Prenda['formality'] {
+  const raw = Array.isArray(v) ? v[0] : v;   // accept old array 'formality' field
+  if (raw === 'formal' || raw === 'casual' || raw === 'deportivo') return raw;
+  if (raw === 'trabajo' || raw === 'fiesta') return 'formal';
+  return 'casual';
+}
+
+// Guarantees every Prenda from any source conforms to the v3 interface.
+// Ensures styles, colors, and tags_ia are always arrays, never undefined.
+function normalizePrenda(raw: unknown): Prenda {
+  const r = raw as Record<string, unknown>;
+  return {
+    id:        String(r.id ?? ''),
+    image_url: String(r.image_url ?? ''),
+    category:  toCategory(r.category),
+    clima:     toClima(r.clima ?? r.weather),   // accept both field names
+    formality: toFormality(r.formality),
+    styles:    Array.isArray(r.styles)  ? (r.styles  as string[]) : [],
+    colors:    Array.isArray(r.colors)  ? (r.colors  as string[]) : [],
+    notas_ia:  typeof r.notas_ia  === 'string' ? r.notas_ia  : undefined,
+    tags_ia:   Array.isArray(r.tags_ia) ? (r.tags_ia as string[]) : [],
+    created_at: typeof r.created_at === 'string' ? r.created_at : new Date().toISOString(),
+  };
+}
+
+// ── Demo data ─────────────────────────────────────────────────────────────────
+// 10 items · 4 categories · 3 climates · 3 formalities
+// AI metadata pre-seeded for the vision-tagging pipeline (future integration).
+
 const MOCK_PRENDAS: Prenda[] = [
   {
     id: 'mock-1',
     image_url: 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=600&auto=format&fit=crop&q=70',
     category: 'superior',
-    weather: ['calido', 'templado'],
-    formality: ['casual', 'trabajo'],
+    clima: 'templado',
+    formality: 'casual',
     styles: ['minimalist', 'casual'],
     colors: ['#FFFFFF'],
-    created_at: new Date().toISOString()
+    notas_ia: 'Remera de algodón en blanco, corte recto clásico. Base perfecta para cualquier combinación.',
+    tags_ia: ['básico', 'algodón', 'corte recto', 'versátil'],
+    created_at: new Date().toISOString(),
   },
   {
     id: 'mock-2',
     image_url: 'https://images.unsplash.com/photo-1574164904299-3a102b110380?w=600&auto=format&fit=crop&q=70',
     category: 'superior',
-    weather: ['frio', 'templado'],
-    formality: ['casual', 'trabajo'],
+    clima: 'frio',
+    formality: 'casual',
     styles: ['cozy', 'minimalist'],
-    colors: ['#D7C0AE'], // Beige
-    created_at: new Date().toISOString()
+    colors: ['#D7C0AE'],
+    notas_ia: 'Suéter de punto grueso en tono arena, textura acogedora. Ideal para capas en invierno.',
+    tags_ia: ['tejido de punto', 'oversized', 'cozy', 'neutro'],
+    created_at: new Date().toISOString(),
   },
   {
     id: 'mock-3',
     image_url: 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600&auto=format&fit=crop&q=70',
     category: 'inferior',
-    weather: ['frio', 'templado', 'lluvioso'],
-    formality: ['casual'],
+    clima: 'frio',
+    formality: 'casual',
     styles: ['streetwear', 'casual'],
-    colors: ['#3E54AC'], // Jean azul
-    created_at: new Date().toISOString()
+    colors: ['#3E54AC'],
+    notas_ia: 'Jean de corte recto en azul clásico, lavado medio. Ícono del streetwear cotidiano.',
+    tags_ia: ['denim', 'corte recto', 'azul medio', 'clásico'],
+    created_at: new Date().toISOString(),
   },
   {
     id: 'mock-4',
     image_url: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=600&auto=format&fit=crop&q=70',
     category: 'inferior',
-    weather: ['calido', 'templado'],
-    formality: ['casual', 'trabajo', 'formal'],
+    clima: 'calor',
+    formality: 'casual',
     styles: ['minimalist', 'elegant'],
-    colors: ['#F5EBE0'], // Blanco/Crema
-    created_at: new Date().toISOString()
+    colors: ['#F5EBE0'],
+    notas_ia: 'Pantalón fluido en crema, cintura alta. Sofisticado y fácil de combinar.',
+    tags_ia: ['fluido', 'cintura alta', 'crema', 'elegante'],
+    created_at: new Date().toISOString(),
   },
   {
     id: 'mock-5',
     image_url: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=600&auto=format&fit=crop&q=70',
     category: 'abrigo',
-    weather: ['frio', 'templado', 'lluvioso'],
-    formality: ['trabajo', 'formal', 'casual'],
+    clima: 'frio',
+    formality: 'formal',
     styles: ['elegant', 'minimalist'],
-    colors: ['#A084CF'], // Camel / Gris claro
-    created_at: new Date().toISOString()
+    colors: ['#A084CF'],
+    notas_ia: 'Tapado largo en lila pastel, fibra suave estructurada. Ideal para salidas formales de invierno.',
+    tags_ia: ['tapado largo', 'color pastel', 'estructurado', 'formal'],
+    created_at: new Date().toISOString(),
   },
   {
     id: 'mock-6',
     image_url: 'https://images.unsplash.com/photo-1611312449412-6cefac5dc3e4?w=600&auto=format&fit=crop&q=70',
     category: 'abrigo',
-    weather: ['templado', 'frio'],
-    formality: ['casual'],
+    clima: 'templado',
+    formality: 'casual',
     styles: ['streetwear', 'casual'],
-    colors: ['#4E6C50'], // Jean oscuro/Verde militar
-    created_at: new Date().toISOString()
+    colors: ['#4E6C50'],
+    notas_ia: 'Campera bomber en verde militar, tela ligera. Versátil y urbana.',
+    tags_ia: ['bomber', 'verde militar', 'ligera', 'urbana'],
+    created_at: new Date().toISOString(),
   },
   {
     id: 'mock-7',
     image_url: 'https://images.unsplash.com/photo-1549298916-b41d501d3772?w=600&auto=format&fit=crop&q=70',
     category: 'calzado',
-    weather: ['calido', 'templado', 'frio'],
-    formality: ['casual', 'trabajo'],
+    clima: 'templado',
+    formality: 'casual',
     styles: ['minimalist', 'sporty'],
     colors: ['#FFFFFF'],
-    created_at: new Date().toISOString()
+    notas_ia: 'Zapatillas blancas suela chunky. Complemento urbano para looks casuales.',
+    tags_ia: ['zapatillas', 'chunky', 'blancas', 'deportivo'],
+    created_at: new Date().toISOString(),
   },
   {
     id: 'mock-8',
     image_url: 'https://images.unsplash.com/photo-1520639888713-7851133b1ed0?w=600&auto=format&fit=crop&q=70',
     category: 'calzado',
-    weather: ['frio', 'templado', 'lluvioso'],
-    formality: ['formal', 'casual', 'fiesta'],
+    clima: 'frio',
+    formality: 'formal',
     styles: ['elegant', 'edgy'],
-    colors: ['#1A1A1A'], // Negro
-    created_at: new Date().toISOString()
+    colors: ['#1A1A1A'],
+    notas_ia: 'Botines de cuero negro, taco bajo redondeado. Clásico con actitud.',
+    tags_ia: ['botines', 'cuero', 'negro', 'taco bajo'],
+    created_at: new Date().toISOString(),
   },
   {
     id: 'mock-9',
-    image_url: 'https://images.unsplash.com/photo-1595777457583-95e059d581b8?w=600&auto=format&fit=crop&q=70',
-    category: 'monoprenda',
-    weather: ['calido', 'templado'],
-    formality: ['fiesta', 'formal', 'casual'],
+    image_url: 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=600&auto=format&fit=crop&q=70',
+    category: 'superior',
+    clima: 'calor',
+    formality: 'formal',
     styles: ['elegant', 'romantic'],
-    colors: ['#2F4F4F'], // Verde esmeralda oscuro
-    created_at: new Date().toISOString()
+    colors: ['#2F4F4F'],
+    notas_ia: 'Blusa liviana en verde oscuro, escote sutil. Perfecta para ocasiones especiales en verano.',
+    tags_ia: ['blusa', 'liviana', 'formal', 'verano'],
+    created_at: new Date().toISOString(),
   },
   {
     id: 'mock-10',
-    image_url: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&auto=format&fit=crop&q=70',
-    category: 'accesorio',
-    weather: ['calido', 'templado', 'frio', 'lluvioso'],
-    formality: ['casual', 'trabajo', 'formal'],
-    styles: ['minimalist', 'elegant'],
-    colors: ['#8D4B32'], // Marrón cuero
-    created_at: new Date().toISOString()
-  }
+    image_url: 'https://images.unsplash.com/photo-1506629082955-511b1aa562c8?w=600&auto=format&fit=crop&q=70',
+    category: 'inferior',
+    clima: 'templado',
+    formality: 'deportivo',
+    styles: ['sporty', 'casual'],
+    colors: ['#8D4B32'],
+    notas_ia: 'Pantalón deportivo de corte ajustado, tela elástica cómoda. Para looks activos y urbanos.',
+    tags_ia: ['deportivo', 'elástico', 'comfy', 'activo'],
+    created_at: new Date().toISOString(),
+  },
 ];
 
-// Helper to initialize LocalStorage wardrobe if empty
-const initLocalStorageCloset = () => {
-  const existing = localStorage.getItem('wardrobe_prendas');
-  if (!existing) {
+// ── LocalStorage init with schema guard ──────────────────────────────────────
+
+const initLocalStorage = () => {
+  if (localStorage.getItem(LS_SCHEMA_KEY) !== SCHEMA_VERSION) {
+    // Schema changed: reset wardrobe and favorites to avoid orphaned/invalid data
+    localStorage.setItem('wardrobe_prendas', JSON.stringify(MOCK_PRENDAS));
+    localStorage.setItem(LS_SCHEMA_KEY, SCHEMA_VERSION);
+    localStorage.removeItem('wardrobe_favorites');
+  } else if (!localStorage.getItem('wardrobe_prendas')) {
     localStorage.setItem('wardrobe_prendas', JSON.stringify(MOCK_PRENDAS));
   }
 };
 
-// ----------------------------------------------------
-// DB INTERFACE WRAPPERS
-// ----------------------------------------------------
+// ── PRENDAS ──────────────────────────────────────────────────────────────────
 
 export async function getPrendas(): Promise<Prenda[]> {
   if (isSupabaseConfigured && supabase) {
@@ -124,47 +196,44 @@ export async function getPrendas(): Promise<Prenda[]> {
         .from('prendas')
         .select('*')
         .order('created_at', { ascending: false });
-
       if (error) throw error;
-      return data || [];
+      return (data ?? []).map(normalizePrenda);
     } catch (err) {
-      console.error('Error fetching prendas from Supabase, falling back to LocalStorage', err);
-      // Fallback to LocalStorage on Supabase error
+      console.error('Supabase getPrendas failed, falling back to LocalStorage', err);
     }
   }
 
-  // LocalStorage Fallback
-  initLocalStorageCloset();
-  const data = localStorage.getItem('wardrobe_prendas');
-  return data ? JSON.parse(data) : [];
+  initLocalStorage();
+  const raw = localStorage.getItem('wardrobe_prendas');
+  if (!raw) return [];
+  return (JSON.parse(raw) as unknown[]).map(normalizePrenda);
 }
 
-export async function addPrenda(prenda: Omit<Prenda, 'id' | 'created_at'>): Promise<Prenda> {
-  const newPrenda: Prenda = {
-    ...prenda,
-    id: isSupabaseConfigured ? undefined : crypto.randomUUID(), // Supabase generates UUID on insert
-    created_at: new Date().toISOString()
-  } as Prenda;
+export async function insertPrenda(prenda: Omit<Prenda, 'id' | 'created_at'>): Promise<Prenda> {
+  const created_at = new Date().toISOString();
 
   if (isSupabaseConfigured && supabase) {
     try {
+      // PostgreSQL auto-generates id via gen_random_uuid() — never include it in the payload.
+      // Note: Supabase column names must match v3 schema (clima, formality as text, not arrays).
+      const payload: Omit<Prenda, 'id'> = { ...prenda, created_at };
       const { data, error } = await supabase
         .from('prendas')
-        .insert([newPrenda])
+        .insert([payload])
         .select()
         .single();
-
       if (error) throw error;
-      return data;
+      return normalizePrenda(data);
     } catch (err) {
-      console.error('Error adding prenda to Supabase, falling back to LocalStorage', err);
+      console.error('Supabase insertPrenda failed, falling back to LocalStorage', err);
     }
   }
 
-  // LocalStorage Fallback
-  initLocalStorageCloset();
-  const data = localStorage.getItem('wardrobe_prendas');
-  const list: Prenda[] = data ? JSON.parse(data) : [];
+  // LocalStorage fallback — UUID generated locally
+  initLocalStorage();
+  const raw  = localStorage.getItem('wardrobe_prendas');
+  const list: Prenda[] = raw ? (JSON.parse(raw) as unknown[]).map(normalizePrenda) : [];
+  const newPrenda: Prenda = { ...prenda, id: crypto.randomUUID(), created_at };
   list.unshift(newPrenda);
   localStorage.setItem('wardrobe_prendas', JSON.stringify(list));
   return newPrenda;
@@ -173,27 +242,22 @@ export async function addPrenda(prenda: Omit<Prenda, 'id' | 'created_at'>): Prom
 export async function deletePrenda(id: string): Promise<void> {
   if (isSupabaseConfigured && supabase) {
     try {
-      // If it's a supabase item, delete from DB
-      const { error } = await supabase
-        .from('prendas')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('prendas').delete().eq('id', id);
       if (error) throw error;
       return;
     } catch (err) {
-      console.error('Error deleting prenda from Supabase, falling back to LocalStorage', err);
+      console.error('Supabase deletePrenda failed, falling back to LocalStorage', err);
     }
   }
 
-  // LocalStorage Fallback
-  const data = localStorage.getItem('wardrobe_prendas');
-  if (data) {
-    let list: Prenda[] = JSON.parse(data);
-    list = list.filter(item => item.id !== id);
-    localStorage.setItem('wardrobe_prendas', JSON.stringify(list));
-  }
+  initLocalStorage();
+  const raw = localStorage.getItem('wardrobe_prendas');
+  if (!raw) return;
+  const list = (JSON.parse(raw) as unknown[]).map(normalizePrenda).filter(item => item.id !== id);
+  localStorage.setItem('wardrobe_prendas', JSON.stringify(list));
 }
+
+// ── OUTFITS FAVORITOS ────────────────────────────────────────────────────────
 
 export async function getOutfitsFavoritos(): Promise<OutfitFavorito[]> {
   if (isSupabaseConfigured && supabase) {
@@ -202,45 +266,39 @@ export async function getOutfitsFavoritos(): Promise<OutfitFavorito[]> {
         .from('outfits_favoritos')
         .select('*')
         .order('created_at', { ascending: false });
-
       if (error) throw error;
-      return data || [];
+      return (data ?? []) as OutfitFavorito[];
     } catch (err) {
-      console.error('Error fetching favorites from Supabase', err);
+      console.error('Supabase getOutfitsFavoritos failed, falling back to LocalStorage', err);
     }
   }
 
-  // LocalStorage Fallback
-  const data = localStorage.getItem('wardrobe_favorites');
-  return data ? JSON.parse(data) : [];
+  const raw = localStorage.getItem('wardrobe_favorites');
+  return raw ? (JSON.parse(raw) as OutfitFavorito[]) : [];
 }
 
-export async function addOutfitFavorito(items: string[], name?: string): Promise<OutfitFavorito> {
-  const newFavorite: OutfitFavorito = {
-    id: isSupabaseConfigured ? undefined : crypto.randomUUID() as any,
-    name: name || 'Outfit Guardado',
-    items,
-    created_at: new Date().toISOString()
-  } as OutfitFavorito;
+export async function insertOutfitFavorito(items: string[], name?: string): Promise<OutfitFavorito> {
+  const created_at  = new Date().toISOString();
+  const outfitName  = name?.trim() || 'Outfit Guardado';
 
   if (isSupabaseConfigured && supabase) {
     try {
+      const payload: Omit<OutfitFavorito, 'id'> = { name: outfitName, items, created_at };
       const { data, error } = await supabase
         .from('outfits_favoritos')
-        .insert([newFavorite])
+        .insert([payload])
         .select()
         .single();
-
       if (error) throw error;
-      return data;
+      return data as OutfitFavorito;
     } catch (err) {
-      console.error('Error adding favorite to Supabase', err);
+      console.error('Supabase insertOutfitFavorito failed, falling back to LocalStorage', err);
     }
   }
 
-  // LocalStorage Fallback
-  const data = localStorage.getItem('wardrobe_favorites');
-  const list: OutfitFavorito[] = data ? JSON.parse(data) : [];
+  const newFavorite: OutfitFavorito = { id: crypto.randomUUID(), name: outfitName, items, created_at };
+  const raw  = localStorage.getItem('wardrobe_favorites');
+  const list: OutfitFavorito[] = raw ? (JSON.parse(raw) as OutfitFavorito[]) : [];
   list.unshift(newFavorite);
   localStorage.setItem('wardrobe_favorites', JSON.stringify(list));
   return newFavorite;
@@ -249,64 +307,47 @@ export async function addOutfitFavorito(items: string[], name?: string): Promise
 export async function deleteOutfitFavorito(id: string): Promise<void> {
   if (isSupabaseConfigured && supabase) {
     try {
-      const { error } = await supabase
-        .from('outfits_favoritos')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('outfits_favoritos').delete().eq('id', id);
       if (error) throw error;
       return;
     } catch (err) {
-      console.error('Error deleting favorite from Supabase', err);
+      console.error('Supabase deleteOutfitFavorito failed, falling back to LocalStorage', err);
     }
   }
 
-  // LocalStorage Fallback
-  const data = localStorage.getItem('wardrobe_favorites');
-  if (data) {
-    let list: OutfitFavorito[] = JSON.parse(data);
-    list = list.filter(item => item.id !== id);
-    localStorage.setItem('wardrobe_favorites', JSON.stringify(list));
-  }
+  const raw = localStorage.getItem('wardrobe_favorites');
+  if (!raw) return;
+  const list = (JSON.parse(raw) as OutfitFavorito[]).filter(item => item.id !== id);
+  localStorage.setItem('wardrobe_favorites', JSON.stringify(list));
 }
 
-// ----------------------------------------------------
-// IMAGE UPLOAD SERVICE
-// ----------------------------------------------------
+// ── IMAGE UPLOAD ─────────────────────────────────────────────────────────────
 
 export async function uploadPrendaImage(file: File): Promise<string> {
   if (isSupabaseConfigured && supabase) {
     try {
-      const fileExt = file.name.split('.').pop();
+      const fileExt  = file.name.split('.').pop() ?? 'jpg';
       const fileName = `${crypto.randomUUID()}.${fileExt}`;
       const filePath = `prendas/${fileName}`;
 
-      // Upload file to Supabase Storage bucket "prendas-images"
       const { error: uploadError } = await supabase.storage
         .from('prendas-images')
         .upload(filePath, file);
-
       if (uploadError) throw uploadError;
 
-      // Get public URL
-      const { data } = supabase.storage
-        .from('prendas-images')
-        .getPublicUrl(filePath);
-
-      if (!data?.publicUrl) throw new Error('Could not get public URL');
+      const { data } = supabase.storage.from('prendas-images').getPublicUrl(filePath);
+      if (!data?.publicUrl) throw new Error('No public URL returned from Supabase Storage');
       return data.publicUrl;
     } catch (err) {
-      console.error('Error uploading to Supabase Storage, falling back to Base64 dataURL', err);
+      console.error('Supabase Storage upload failed, falling back to Base64 dataURL', err);
     }
   }
 
-  // LocalStorage / Offline Fallback: Convert to Base64 DataURL
-  return new Promise((resolve, reject) => {
+  // Offline fallback: encode to Base64 DataURL for LocalStorage
+  return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onloadend = () => {
-      resolve(reader.result as string);
-    };
-    reader.onerror = (err) => reject(err);
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror  = () => reject(new Error('FileReader failed to encode image'));
     reader.readAsDataURL(file);
   });
 }

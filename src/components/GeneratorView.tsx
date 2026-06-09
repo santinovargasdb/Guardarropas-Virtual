@@ -1,204 +1,214 @@
-import React, { useState, useEffect } from 'react';
-import { RefreshCw, Heart, AlertCircle, Check } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { RefreshCw, Heart, AlertCircle, Sparkles } from 'lucide-react';
 import type { Prenda } from '../types';
-import { addOutfitFavorito } from '../lib/db';
+import { insertOutfitFavorito } from '../lib/db';
 
 interface GeneratorViewProps {
   items: Prenda[];
   onFavoriteSaved?: () => void;
 }
 
+type OutfitState = {
+  superior?: Prenda;
+  inferior?: Prenda;
+  abrigo?:   Prenda;
+  calzado?:  Prenda;
+};
+
+// Preselect climate based on Argentine Southern Hemisphere seasons.
+// Jan(0)–Feb(1) and Dec(11) → summer · Jun(5)–Aug(7) → winter · otherwise templado
+function getDefaultClima(): Prenda['clima'] {
+  const m = new Date().getMonth();
+  if (m === 11 || m <= 1) return 'calor';
+  if (m >= 5  && m <= 7)  return 'frio';
+  return 'templado';
+}
+
 export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
-  // Filters
-  const [selectedWeather, setSelectedWeather] = useState<Prenda['weather'][number]>('templado');
-  const [selectedFormality, setSelectedFormality] = useState<Prenda['formality'][number]>('casual');
-  const [selectedStyle, setSelectedStyle] = useState<string>('todos');
-  
-  // States for generated outfit
-  const [generatedOutfit, setGeneratedOutfit] = useState<{
-    superior?: Prenda;
-    inferior?: Prenda;
-    monoprenda?: Prenda;
-    abrigo?: Prenda;
-    calzado?: Prenda;
-    accesorio?: Prenda;
-  } | null>(null);
+  const [selectedClima,     setSelectedClima]     = useState<Prenda['clima']>(getDefaultClima());
+  const [selectedFormality, setSelectedFormality] = useState<Prenda['formality']>('casual');
+  const [selectedStyle,     setSelectedStyle]     = useState<string>('todos');
 
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [outfitName, setOutfitName] = useState('');
-  const [showSaveDialog, setShowSaveDialog] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [noItemsError, setNoItemsError] = useState<string | null>(null);
+  const [generatedOutfit, setGeneratedOutfit] = useState<OutfitState | null>(null);
+  const [isGenerating,    setIsGenerating]    = useState(false);
+  const [isShuffling,     setIsShuffling]     = useState(false);
+  const [outfitName,      setOutfitName]      = useState('');
+  const [showSaveDialog,  setShowSaveDialog]  = useState(false);
+  const [isSaving,        setIsSaving]        = useState(false);
+  const [saveSuccess,     setSaveSuccess]     = useState(false);
+  const [errorMsg,        setErrorMsg]        = useState<string | null>(null);
 
-  // Extract all unique styles from closet items to populate style filter
-  const allStyles = React.useMemo(() => {
-    const stylesSet = new Set<string>();
-    items.forEach(item => {
-      item.styles.forEach(s => stylesSet.add(s));
-    });
-    return Array.from(stylesSet);
+  const generateTimeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveFavoriteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const allStyles = useMemo(() => {
+    const set = new Set<string>();
+    items.forEach(item => item.styles.forEach(s => set.add(s)));
+    return Array.from(set);
   }, [items]);
 
-  // Generate outfit handler
+  // Clear stale error whenever the user adjusts any filter
+  useEffect(() => {
+    setErrorMsg(null);
+  }, [selectedClima, selectedFormality, selectedStyle]);
+
+  // Cleanup pending timers on unmount to prevent memory leaks on mobile
+  useEffect(() => {
+    return () => {
+      if (generateTimeoutRef.current)     clearTimeout(generateTimeoutRef.current);
+      if (saveFavoriteTimeoutRef.current) clearTimeout(saveFavoriteTimeoutRef.current);
+    };
+  }, []);
+
   const handleGenerate = () => {
     if (items.length === 0) {
-      setNoItemsError('Tu armario está vacío. Sube algunas prendas primero.');
+      setErrorMsg('Tu armario está vacío. ¡Subí algunas prendas primero!');
       return;
     }
 
     setIsGenerating(true);
-    setNoItemsError(null);
+    setIsShuffling(true);
+    setErrorMsg(null);
     setShowSaveDialog(false);
 
-    // Simulate shuffling animation
-    setTimeout(() => {
-      // 1. Filter items by Weather & Formality (primary filters)
-      let pool = items.filter(item => {
-        const matchesWeather = item.weather.includes(selectedWeather);
-        const matchesFormality = item.formality.includes(selectedFormality);
-        return matchesWeather && matchesFormality;
-      });
+    generateTimeoutRef.current = setTimeout(() => {
+      // ── Layer 1: primary filters (clima + formality as single-value comparisons) ──
+      let pool = items.filter(
+        item => item.clima === selectedClima && item.formality === selectedFormality
+      );
 
-      // 2. Secondary Filter: Style (if selected, try to match it)
+      // ── Layer 2: style soft-filter — never narrows to empty ─────────────────────
       if (selectedStyle !== 'todos') {
         const stylePool = pool.filter(item => item.styles.includes(selectedStyle));
-        // If we have items with this style, we narrow the pool. Otherwise, fallback to main pool
-        if (stylePool.length > 0) {
-          pool = stylePool;
-        }
+        if (stylePool.length > 0) pool = stylePool;
       }
 
-      // Group pool by category
+      // ── Layer 3: group filtered pool by category ─────────────────────────────────
       const byCat = {
         superior: pool.filter(i => i.category === 'superior'),
         inferior: pool.filter(i => i.category === 'inferior'),
-        monoprenda: pool.filter(i => i.category === 'monoprenda'),
-        abrigo: pool.filter(i => i.category === 'abrigo'),
-        calzado: pool.filter(i => i.category === 'calzado'),
-        accesorio: pool.filter(i => i.category === 'accesorio'),
+        abrigo:   pool.filter(i => i.category === 'abrigo'),
+        calzado:  pool.filter(i => i.category === 'calzado'),
       };
 
-      // Determine outfit type (monoprenda vs. top+bottom)
-      const hasMonoprendas = byCat.monoprenda.length > 0;
-      const hasTops = byCat.superior.length > 0;
-      const hasBottoms = byCat.inferior.length > 0;
-      const hasCalzado = byCat.calzado.length > 0;
+      const rand = (arr: Prenda[]): Prenda => arr[Math.floor(Math.random() * arr.length)];
 
-      if (!hasTops && !hasBottoms && !hasMonoprendas) {
-        setNoItemsError('No hay prendas suficientes (tops/monoprendas) que coincidan con estos filtros.');
+      const fail = (msg: string) => {
+        setErrorMsg(msg);
         setIsGenerating(false);
+        setIsShuffling(false);
         setGeneratedOutfit(null);
+        generateTimeoutRef.current = null;
+      };
+
+      // ════════════════════════════════════════════════════════════════════════════
+      // GATE 1 — Calzado (always mandatory)
+      // ════════════════════════════════════════════════════════════════════════════
+      if (byCat.calzado.length === 0) {
+        fail(
+          '¡No encontramos calzado que combine con estos filtros! ' +
+          'Probá cambiando el estilo o cargá más zapatos en tu armario.'
+        );
         return;
       }
 
-      if (!hasCalzado) {
-        setNoItemsError('Necesitas cargar al menos un calzado compatible en tu armario.');
-        setIsGenerating(false);
-        setGeneratedOutfit(null);
+      // ════════════════════════════════════════════════════════════════════════════
+      // GATE 2 — Abrigo (mandatory when clima = frío)
+      // ════════════════════════════════════════════════════════════════════════════
+      if (selectedClima === 'frio' && byCat.abrigo.length === 0) {
+        fail(
+          '¡Hace frío! Necesitás un abrigo compatible, pero no encontramos ' +
+          'ninguno con estos filtros. ¡Cargá un tapado o campera y volvé a intentarlo!'
+        );
         return;
       }
 
-      // Choose outfit structure
-      const outfit: typeof generatedOutfit = {};
-      const randomChoice = Math.random();
-
-      // If we have monoprendas and choose to use them (or if we have no tops/bottoms)
-      if (hasMonoprendas && (randomChoice > 0.5 || !hasTops || !hasBottoms)) {
-        outfit.monoprenda = byCat.monoprenda[Math.floor(Math.random() * byCat.monoprenda.length)];
-      } else {
-        if (hasTops && hasBottoms) {
-          outfit.superior = byCat.superior[Math.floor(Math.random() * byCat.superior.length)];
-          outfit.inferior = byCat.inferior[Math.floor(Math.random() * byCat.inferior.length)];
+      // ════════════════════════════════════════════════════════════════════════════
+      // GATE 3 — Body coverage: superior + inferior required
+      // ════════════════════════════════════════════════════════════════════════════
+      if (byCat.superior.length === 0 || byCat.inferior.length === 0) {
+        let msg: string;
+        if (byCat.superior.length === 0 && byCat.inferior.length === 0) {
+          msg = '¡No encontramos tops ni prendas inferiores con estos filtros! Probá cambiando la ocasión o el estilo.';
+        } else if (byCat.superior.length === 0) {
+          msg = '¡No hay prendas superiores (remeras, blusas, suéteres) que coincidan! Cambiá los filtros o cargá más prendas.';
         } else {
-          // Fallback if we miss one part but have monoprenda
-          if (hasMonoprendas) {
-            outfit.monoprenda = byCat.monoprenda[Math.floor(Math.random() * byCat.monoprenda.length)];
-          } else {
-            setNoItemsError('Necesitas cargar al menos una prenda superior y una inferior para combinar.');
-            setIsGenerating(false);
-            return;
-          }
+          msg = '¡No hay prendas inferiores (pantalones, polleras, jeans) que coincidan! Cambiá los filtros o cargá más prendas.';
         }
+        fail(msg);
+        return;
       }
 
-      // Add Calzado (Shoes)
-      outfit.calzado = byCat.calzado[Math.floor(Math.random() * byCat.calzado.length)];
+      // ════════════════════════════════════════════════════════════════════════════
+      // COMPOSE — all gates passed, build the outfit
+      // ════════════════════════════════════════════════════════════════════════════
+      const outfit: OutfitState = {
+        superior: rand(byCat.superior),
+        inferior: rand(byCat.inferior),
+        calzado:  rand(byCat.calzado),
+      };
 
-      // Add Abrigo (Outerwear) based on weather
+      // Abrigo: mandatory for frío (gated above), optional for templado/calor
       if (byCat.abrigo.length > 0) {
-        if (selectedWeather === 'frio') {
-          // Mandatory in cold weather
-          outfit.abrigo = byCat.abrigo[Math.floor(Math.random() * byCat.abrigo.length)];
-        } else if (selectedWeather === 'templado' && Math.random() > 0.4) {
-          // Optional (60% chance) in temperate weather
-          outfit.abrigo = byCat.abrigo[Math.floor(Math.random() * byCat.abrigo.length)];
+        if (selectedClima === 'frio') {
+          outfit.abrigo = rand(byCat.abrigo);
+        } else if (selectedClima === 'templado' && Math.random() > 0.4) {
+          outfit.abrigo = rand(byCat.abrigo);
         }
-      }
-
-      // Add Accessory (optional 40% chance)
-      if (byCat.accesorio.length > 0 && Math.random() > 0.6) {
-        outfit.accesorio = byCat.accesorio[Math.floor(Math.random() * byCat.accesorio.length)];
       }
 
       setGeneratedOutfit(outfit);
       setIsGenerating(false);
+      setIsShuffling(false);
+      generateTimeoutRef.current = null;
     }, 850);
   };
 
-  // Shuffle individual item category
-  const handleShuffleItem = (category: keyof NonNullable<typeof generatedOutfit>) => {
+  const handleShuffleItem = (category: keyof OutfitState) => {
     if (!generatedOutfit) return;
 
-    // Filter items of this category matching the current filters
-    let pool = items.filter(item => {
-      const matchesCategory = item.category === category;
-      const matchesWeather = item.weather.includes(selectedWeather);
-      const matchesFormality = item.formality.includes(selectedFormality);
-      return matchesCategory && matchesWeather && matchesFormality;
-    });
+    let pool = items.filter(
+      item =>
+        item.category === category &&
+        item.clima     === selectedClima &&
+        item.formality === selectedFormality
+    );
 
     if (selectedStyle !== 'todos') {
       const stylePool = pool.filter(item => item.styles.includes(selectedStyle));
       if (stylePool.length > 0) pool = stylePool;
     }
 
-    // Exclude current item to guarantee a change if possible
-    const currentId = generatedOutfit[category]?.id;
-    const cleanPool = pool.filter(i => i.id !== currentId);
-    const finalPool = cleanPool.length > 0 ? cleanPool : pool;
+    const currentId  = generatedOutfit[category]?.id;
+    const cleanPool  = pool.filter(i => i.id !== currentId);
+    const finalPool  = cleanPool.length > 0 ? cleanPool : pool;
 
     if (finalPool.length > 0) {
       const newItem = finalPool[Math.floor(Math.random() * finalPool.length)];
-      setGeneratedOutfit(prev => ({
-        ...prev,
-        [category]: newItem
-      }));
+      setGeneratedOutfit(prev => ({ ...prev, [category]: newItem }));
     }
   };
 
-  // Save outfit favorites handler
   const handleSaveFavorite = async () => {
     if (!generatedOutfit) return;
-    
     setIsSaving(true);
     try {
-      const itemIds: string[] = [];
-      if (generatedOutfit.superior) itemIds.push(generatedOutfit.superior.id);
-      if (generatedOutfit.inferior) itemIds.push(generatedOutfit.inferior.id);
-      if (generatedOutfit.monoprenda) itemIds.push(generatedOutfit.monoprenda.id);
-      if (generatedOutfit.abrigo) itemIds.push(generatedOutfit.abrigo.id);
-      if (generatedOutfit.calzado) itemIds.push(generatedOutfit.calzado.id);
-      if (generatedOutfit.accesorio) itemIds.push(generatedOutfit.accesorio.id);
+      const itemIds = [
+        generatedOutfit.superior?.id,
+        generatedOutfit.inferior?.id,
+        generatedOutfit.abrigo?.id,
+        generatedOutfit.calzado?.id,
+      ].filter((id): id is string => id !== undefined);
 
-      await addOutfitFavorito(itemIds, outfitName.trim() || undefined);
+      await insertOutfitFavorito(itemIds, outfitName.trim() || undefined);
       setSaveSuccess(true);
       setOutfitName('');
-      
-      setTimeout(() => {
+
+      saveFavoriteTimeoutRef.current = setTimeout(() => {
         setSaveSuccess(false);
         setShowSaveDialog(false);
         if (onFavoriteSaved) onFavoriteSaved();
+        saveFavoriteTimeoutRef.current = null;
       }, 1500);
     } catch (err) {
       console.error(err);
@@ -207,9 +217,10 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
     }
   };
 
-  // Automatically generate an outfit on load if empty
+  // Auto-generate a first outfit when items load for the first time
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (items.length > 0 && !generatedOutfit && !noItemsError) {
+    if (items.length > 0 && !generatedOutfit && !errorMsg) {
       handleGenerate();
     }
   }, [items]);
@@ -221,218 +232,118 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       <h2 className="section-title" style={{ textAlign: 'center', marginBottom: '8px' }}>Combinador Mágico</h2>
       <p className="subtitle">Crea combinaciones instantáneas con filtros</p>
 
-      {/* Filters Form */}
+      {/* ── Filters ─────────────────────────────────────────────────────── */}
       <div className="glass-panel" style={{ padding: '16px', marginBottom: '20px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px', marginBottom: '12px' }}>
-          
-          {/* Weather select */}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Clima</label>
             <select
-              value={selectedWeather}
-              onChange={(e) => setSelectedWeather(e.target.value as any)}
-              style={{
-                padding: '10px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--panel-border)',
-                backgroundColor: 'var(--bg-color)',
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '0.85rem',
-                outline: 'none'
-              }}
+              value={selectedClima}
+              onChange={(e) => setSelectedClima(e.target.value as Prenda['clima'])}
+              style={{ padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.85rem', outline: 'none' }}
             >
-              <option value="calido">☀️ Cálido</option>
+              <option value="calor">☀️ Calor</option>
               <option value="templado">⛅ Templado</option>
               <option value="frio">❄️ Frío</option>
-              <option value="lluvioso">🌧️ Lluvioso</option>
             </select>
           </div>
 
-          {/* Formality select */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Ocasión</label>
             <select
               value={selectedFormality}
-              onChange={(e) => setSelectedFormality(e.target.value as any)}
-              style={{
-                padding: '10px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--panel-border)',
-                backgroundColor: 'var(--bg-color)',
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '0.85rem',
-                outline: 'none'
-              }}
+              onChange={(e) => setSelectedFormality(e.target.value as Prenda['formality'])}
+              style={{ padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.85rem', outline: 'none' }}
             >
               <option value="casual">✨ Casual</option>
-              <option value="trabajo">💼 Trabajo</option>
-              <option value="formal">🍸 Formal</option>
-              <option value="fiesta">🎉 Fiesta</option>
+              <option value="formal">💼 Formal</option>
+              <option value="deportivo">🏃 Deportivo</option>
             </select>
           </div>
         </div>
 
-        {/* Style select */}
         {allStyles.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '16px' }}>
-            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Estilo de Moda</label>
+            <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Estilo</label>
             <select
               value={selectedStyle}
               onChange={(e) => setSelectedStyle(e.target.value)}
-              style={{
-                padding: '10px',
-                borderRadius: 'var(--radius-sm)',
-                border: '1px solid var(--panel-border)',
-                backgroundColor: 'var(--bg-color)',
-                color: 'var(--text-primary)',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '0.85rem',
-                outline: 'none'
-              }}
+              style={{ padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.85rem', outline: 'none' }}
             >
               <option value="todos">Todos los estilos</option>
-              {allStyles.map(s => (
-                <option key={s} value={s}>#{s}</option>
-              ))}
+              {allStyles.map(s => <option key={s} value={s}>#{s}</option>)}
             </select>
           </div>
         )}
 
-        <button 
-          className="btn btn-primary"
-          onClick={handleGenerate}
-          disabled={isGenerating}
-        >
+        <button className="btn btn-primary" onClick={handleGenerate} disabled={isGenerating}>
           <RefreshCw className={isGenerating ? 'animate-spin' : ''} size={18} />
           {isGenerating ? 'Combinando tu closet...' : 'Generar Outfit'}
         </button>
       </div>
 
-      {/* Output Errors */}
-      {noItemsError && (
-        <div 
-          className="glass-panel" 
-          style={{ 
-            color: 'var(--danger-color)', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px', 
-            fontSize: '0.9rem',
-            borderColor: 'rgba(224, 122, 95, 0.3)',
-            backgroundColor: 'rgba(224, 122, 95, 0.05)'
-          }}
+      {/* ── Error feedback ───────────────────────────────────────────────── */}
+      {errorMsg && (
+        <div
+          className="glass-panel fade-in"
+          style={{ color: 'var(--danger-color)', display: 'flex', alignItems: 'flex-start', gap: '10px', fontSize: '0.9rem', lineHeight: '1.4', borderColor: 'rgba(224, 122, 95, 0.3)', backgroundColor: 'rgba(224, 122, 95, 0.05)', marginBottom: '8px' }}
         >
-          <AlertCircle size={20} style={{ flexShrink: 0 }} />
-          <span>{noItemsError}</span>
+          <AlertCircle size={20} style={{ flexShrink: 0, marginTop: '1px' }} />
+          <span>{errorMsg}</span>
         </div>
       )}
 
-      {/* Generated Outfit Canvas */}
-      {hasOutfit && !noItemsError && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }} className="fade-in">
-          
-          <div 
-            className="glass-panel" 
-            style={{ 
-              padding: '16px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-              position: 'relative'
-            }}
-          >
-            {/* Collage Container */}
-            <div 
-              style={{ 
-                display: 'grid', 
-                gridTemplateColumns: generatedOutfit.monoprenda ? '1fr' : '1fr 1fr', 
-                gap: '12px',
-              }}
-            >
-              {/* Monoprenda Item */}
-              {generatedOutfit.monoprenda && (
-                <OutfitItemCard 
-                  label="Enterito / Vestido" 
-                  item={generatedOutfit.monoprenda} 
-                  onShuffle={() => handleShuffleItem('monoprenda')} 
-                />
-              )}
+      {/* ── Outfit canvas ────────────────────────────────────────────────── */}
+      {hasOutfit && !errorMsg && (
+        <div className={`fade-in${isShuffling ? ' shuffling' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative' }}>
 
-              {/* Top Item */}
+            {/* Top row: superior + inferior */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
               {generatedOutfit.superior && (
-                <OutfitItemCard 
-                  label="Prenda Superior" 
-                  item={generatedOutfit.superior} 
-                  onShuffle={() => handleShuffleItem('superior')} 
+                <OutfitItemCard
+                  label="Prenda Superior"
+                  item={generatedOutfit.superior}
+                  onShuffle={() => handleShuffleItem('superior')}
                 />
               )}
-
-              {/* Bottom Item */}
               {generatedOutfit.inferior && (
-                <OutfitItemCard 
-                  label="Prenda Inferior" 
-                  item={generatedOutfit.inferior} 
-                  onShuffle={() => handleShuffleItem('inferior')} 
+                <OutfitItemCard
+                  label="Prenda Inferior"
+                  item={generatedOutfit.inferior}
+                  onShuffle={() => handleShuffleItem('inferior')}
                 />
               )}
             </div>
 
-            {/* Sub-row (Coat & Shoes) */}
-            <div 
-              style={{ 
-                display: 'grid', 
-                gridTemplateColumns: generatedOutfit.abrigo ? '1fr 1fr' : '1fr', 
-                gap: '12px' 
-              }}
-            >
-              {/* Outerwear Coat */}
+            {/* Bottom row: abrigo + calzado */}
+            <div style={{ display: 'grid', gridTemplateColumns: generatedOutfit.abrigo ? '1fr 1fr' : '1fr', gap: '12px' }}>
               {generatedOutfit.abrigo && (
-                <OutfitItemCard 
-                  label="Abrigo" 
-                  item={generatedOutfit.abrigo} 
-                  onShuffle={() => handleShuffleItem('abrigo')} 
+                <OutfitItemCard
+                  label="Abrigo"
+                  item={generatedOutfit.abrigo}
+                  onShuffle={() => handleShuffleItem('abrigo')}
                 />
               )}
-
-              {/* Calzado Shoes */}
               {generatedOutfit.calzado && (
-                <OutfitItemCard 
-                  label="Calzado" 
-                  item={generatedOutfit.calzado} 
-                  onShuffle={() => handleShuffleItem('calzado')} 
+                <OutfitItemCard
+                  label="Calzado"
+                  item={generatedOutfit.calzado}
+                  onShuffle={() => handleShuffleItem('calzado')}
                 />
               )}
             </div>
-
-            {/* Accessory Row */}
-            {generatedOutfit.accesorio && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', marginTop: '4px' }}>
-                <OutfitItemCard 
-                  label="Accesorio" 
-                  item={generatedOutfit.accesorio} 
-                  onShuffle={() => handleShuffleItem('accesorio')} 
-                  isSmall
-                />
-              </div>
-            )}
           </div>
 
           {/* Action buttons */}
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-            <button 
-              className="btn btn-secondary" 
-              onClick={handleGenerate} 
-              style={{ flex: 1 }}
-              disabled={isGenerating}
-            >
+            <button className="btn btn-secondary" onClick={handleGenerate} style={{ flex: 1 }} disabled={isGenerating}>
               <RefreshCw size={16} /> Mezclar Todo
             </button>
-            
-            <button 
-              className="btn btn-primary" 
-              onClick={() => setShowSaveDialog(true)} 
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowSaveDialog(true)}
               style={{ flex: 1.5, backgroundColor: 'var(--success-color)' }}
             >
               <Heart size={16} fill="white" /> Guardar Combinación
@@ -441,86 +352,54 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         </div>
       )}
 
-      {/* Save Dialog Overlay */}
+      {/* ── Save dialog ──────────────────────────────────────────────────── */}
       {showSaveDialog && (
-        <div 
-          style={{ 
-            position: 'fixed', 
-            top: 0, 
-            left: 0, 
-            width: '100vw', 
-            height: '100vh', 
-            backgroundColor: 'rgba(0,0,0,0.5)', 
-            backdropFilter: 'blur(4px)',
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            zIndex: 1000,
-            padding: '20px'
-          }}
+        <div
+          style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '20px' }}
           onClick={() => setShowSaveDialog(false)}
         >
-          <div 
-            className="glass-panel pop-in" 
-            style={{ 
-              width: '100%', 
-              maxWidth: '360px', 
-              margin: 0, 
-              backgroundColor: 'var(--bg-color)',
-              position: 'relative'
-            }}
+          <div
+            className="glass-panel pop-in"
+            style={{ width: '100%', maxWidth: '360px', margin: 0, backgroundColor: 'var(--bg-color)', position: 'relative' }}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="item-title" style={{ fontSize: '1.2rem', marginBottom: '12px', fontFamily: 'var(--font-serif)', fontWeight: 600 }}>Guardar Outfit</h3>
-            
+            <h3 className="item-title" style={{ fontSize: '1.2rem', marginBottom: '12px', fontFamily: 'var(--font-serif)', fontWeight: 600 }}>
+              Guardar Outfit
+            </h3>
+
             {saveSuccess ? (
-              <div 
-                style={{ 
-                  color: 'var(--success-color)', 
-                  textAlign: 'center', 
-                  padding: '20px 0', 
-                  fontWeight: 600,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '8px'
-                }}
+              <div
+                className="sparkle-success"
+                style={{ color: 'var(--success-color)', textAlign: 'center', padding: '20px 0', fontWeight: 600, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}
               >
-                <Check size={32} /> ¡Añadido a tus Favoritos!
+                <Sparkles size={42} style={{ color: 'var(--accent-color)' }} />
+                ¡Añadido a tus Favoritos!
               </div>
             ) : (
               <>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontSize: '0.8rem' }}>Dale un nombre a este look (opcional)</label>
-                  <input 
-                    type="text" 
+                  <label className="form-label" style={{ fontSize: '0.8rem' }}>
+                    Dale un nombre a este look (opcional)
+                  </label>
+                  <input
+                    type="text"
                     placeholder="Ej: Look de Sábado, Cita de cumple..."
                     value={outfitName}
                     onChange={(e) => setOutfitName(e.target.value)}
-                    style={{
-                      padding: '12px',
-                      borderRadius: 'var(--radius-sm)',
-                      border: '1px solid var(--panel-border)',
-                      backgroundColor: 'rgba(255,255,255,0.8)',
-                      color: 'var(--text-primary)',
-                      fontFamily: 'var(--font-sans)',
-                      fontSize: '0.95rem',
-                      outline: 'none'
-                    }}
+                    style={{ padding: '12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'rgba(255,255,255,0.8)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.95rem', outline: 'none' }}
                     autoFocus
                   />
                 </div>
-
                 <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-                  <button 
-                    className="btn btn-secondary" 
+                  <button
+                    className="btn btn-secondary"
                     onClick={() => setShowSaveDialog(false)}
                     style={{ flex: 1, padding: '10px' }}
                   >
                     Cancelar
                   </button>
-                  <button 
-                    className="btn btn-primary" 
+                  <button
+                    className="btn btn-primary"
                     onClick={handleSaveFavorite}
                     style={{ flex: 2, padding: '10px', backgroundColor: 'var(--success-color)' }}
                     disabled={isSaving}
@@ -537,9 +416,7 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
   );
 }
 
-// ----------------------------------------------------
-// CHILD COMPONENT: OUTFIT ITEM CARD
-// ----------------------------------------------------
+// ── Child component: Outfit Item Card ─────────────────────────────────────────
 
 interface OutfitItemCardProps {
   label: string;
@@ -550,74 +427,41 @@ interface OutfitItemCardProps {
 
 function OutfitItemCard({ label, item, onShuffle, isSmall }: OutfitItemCardProps) {
   return (
-    <div 
+    <div
       className="prenda-card pop-in"
-      style={{ 
-        flexDirection: isSmall ? 'row' : 'column',
-        height: isSmall ? '80px' : 'auto',
-        position: 'relative'
-      }}
+      style={{ flexDirection: isSmall ? 'row' : 'column', height: isSmall ? '80px' : 'auto', position: 'relative' }}
     >
-      <div 
-        className="prenda-img-container" 
-        style={{ 
-          aspectRatio: isSmall ? '1/1' : '3/4',
-          width: isSmall ? '80px' : '100%',
-        }}
+      <div
+        className="prenda-img-container"
+        style={{ aspectRatio: isSmall ? '1/1' : '3/4', width: isSmall ? '80px' : '100%' }}
       >
         <img src={item.image_url} alt={label} className="prenda-img" />
       </div>
 
-      <div 
+      <div
         className="prenda-info"
-        style={{ 
-          padding: isSmall ? '10px 12px' : '10px',
-          display: 'flex',
-          flexDirection: 'column',
-          justifyContent: isSmall ? 'center' : 'flex-start',
-          flex: isSmall ? 1 : undefined
-        }}
+        style={{ padding: isSmall ? '10px 12px' : '10px', display: 'flex', flexDirection: 'column', justifyContent: isSmall ? 'center' : 'flex-start', flex: isSmall ? 1 : undefined }}
       >
-        <span 
+        <span
           className="prenda-category"
-          style={{ 
-            fontSize: '0.65rem', 
-            fontWeight: 700, 
-            letterSpacing: '0.03em',
-            marginBottom: '2px'
-          }}
+          style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.03em', marginBottom: '2px' }}
         >
           {label}
         </span>
-        
+
         {!isSmall && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '4px' }}>
             {item.styles.slice(0, 1).map(s => (
-              <span key={s} className="tag-badge" style={{ fontSize: '0.6rem', padding: '1px 4px' }}>
-                #{s}
-              </span>
+              <span key={s} className="tag-badge" style={{ fontSize: '0.6rem', padding: '1px 4px' }}>#{s}</span>
             ))}
             {item.colors.slice(0, 1).map(c => (
-              <span 
-                key={c} 
-                className="tag-badge" 
-                style={{ 
-                  fontSize: '0.6rem', 
-                  padding: '1px 4px', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '2px' 
-                }}
+              <span
+                key={c}
+                className="tag-badge"
+                style={{ fontSize: '0.6rem', padding: '1px 4px', display: 'flex', alignItems: 'center', gap: '2px' }}
               >
-                <span 
-                  style={{ 
-                    display: 'inline-block', 
-                    width: '6px', 
-                    height: '6px', 
-                    borderRadius: '50%', 
-                    backgroundColor: c,
-                    border: c === '#FFFFFF' ? '1px solid #CCC' : undefined
-                  }} 
+                <span
+                  style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: c, border: c === '#FFFFFF' ? '1px solid #CCC' : undefined }}
                 />
               </span>
             ))}
@@ -625,36 +469,11 @@ function OutfitItemCard({ label, item, onShuffle, isSmall }: OutfitItemCardProps
         )}
       </div>
 
-      {/* Category Swap/Shuffle Button */}
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onShuffle();
-        }}
-        style={{
-          position: 'absolute',
-          top: isSmall ? '50%' : '8px',
-          right: '8px',
-          transform: isSmall ? 'translateY(-50%)' : 'none',
-          backgroundColor: 'rgba(255, 255, 255, 0.9)',
-          border: 'none',
-          borderRadius: '50%',
-          width: '28px',
-          height: '28px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-          cursor: 'pointer',
-          color: 'var(--text-primary)',
-          transition: 'transform 0.2s ease, background-color 0.2s'
-        }}
-        onMouseDown={(e) => {
-          e.currentTarget.style.transform = isSmall ? 'translateY(-50%) scale(0.9)' : 'scale(0.9)';
-        }}
-        onMouseUp={(e) => {
-          e.currentTarget.style.transform = isSmall ? 'translateY(-50%) scale(1)' : 'scale(1)';
-        }}
+        onClick={(e) => { e.stopPropagation(); onShuffle(); }}
+        style={{ position: 'absolute', top: isSmall ? '50%' : '8px', right: '8px', transform: isSmall ? 'translateY(-50%)' : 'none', backgroundColor: 'rgba(255, 255, 255, 0.9)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', cursor: 'pointer', color: 'var(--text-primary)', transition: 'transform 0.2s ease, background-color 0.2s' }}
+        onMouseDown={(e) => { e.currentTarget.style.transform = isSmall ? 'translateY(-50%) scale(0.9)' : 'scale(0.9)'; }}
+        onMouseUp={(e)   => { e.currentTarget.style.transform = isSmall ? 'translateY(-50%) scale(1)'   : 'scale(1)'; }}
         title="Cambiar esta prenda"
       >
         <RefreshCw size={13} />

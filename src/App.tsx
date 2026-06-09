@@ -7,6 +7,7 @@ import { UploadForm } from './components/UploadForm';
 import { ClosetView } from './components/ClosetView';
 import { GeneratorView } from './components/GeneratorView';
 import { FavoritesView } from './components/FavoritesView';
+import { ClosetSkeleton, FavoritesSkeleton } from './components/SkeletonLoader';
 import './App.css';
 
 type Tab = 'armario' | 'cargar' | 'combinar' | 'favoritos';
@@ -71,9 +72,15 @@ function App() {
       {/* Main app panel */}
       <main className="app-content">
         {isLoading ? (
-          <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', height: '200px', color: 'var(--text-secondary)' }}>
-            Cargando armario...
-          </div>
+          <>
+            {activeTab === 'armario'   && <ClosetSkeleton />}
+            {activeTab === 'favoritos' && <FavoritesSkeleton />}
+            {(activeTab === 'cargar' || activeTab === 'combinar') && (
+              <div style={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', height: '200px', color: 'var(--text-secondary)' }}>
+                Cargando...
+              </div>
+            )}
+          </>
         ) : (
           <>
             {activeTab === 'cargar' && (
@@ -92,7 +99,7 @@ function App() {
             )}
             
             {activeTab === 'favoritos' && (
-              <FavoritesView favorites={favorites} allItems={prendas} onRefresh={handleRefresh} />
+              <FavoritesView favorites={favorites} allItems={prendas} onRefresh={handleRefresh} onNavigateToCombinar={() => setActiveTab('combinar')} />
             )}
           </>
         )}

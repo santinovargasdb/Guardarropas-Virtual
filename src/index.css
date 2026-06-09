@@ -427,3 +427,66 @@ p.subtitle {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--accent-color);
 }
+
+/* Spinner */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Skeleton loading */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position:  200% center; }
+}
+
+.skeleton-block {
+  background: linear-gradient(
+    90deg,
+    var(--accent-light) 25%,
+    rgba(255, 255, 255, 0.65) 50%,
+    var(--accent-light) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.6s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-color-scheme: dark) {
+  .skeleton-block {
+    background: linear-gradient(
+      90deg,
+      var(--accent-light) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      var(--accent-light) 75%
+    );
+    background-size: 200% 100%;
+  }
+}
+
+/* Shuffle animation — outfit cards during the 850ms generation window */
+@keyframes shuffle-think {
+  0%   { opacity: 1;    transform: scale(1); }
+  40%  { opacity: 0.65; transform: scale(0.975); }
+  100% { opacity: 1;    transform: scale(1); }
+}
+
+.shuffling {
+  animation: shuffle-think 0.45s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Sparkle burst — outfit save success state */
+@keyframes sparkle-burst {
+  0%   { transform: scale(0.7);  opacity: 0; }
+  65%  { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1);    opacity: 1; }
+}
+
+.sparkle-success {
+  animation: sparkle-burst 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
