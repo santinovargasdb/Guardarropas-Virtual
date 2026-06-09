@@ -9,10 +9,12 @@ interface GeneratorViewProps {
 }
 
 type OutfitState = {
-  superior?: Prenda;
-  inferior?: Prenda;
-  abrigo?:   Prenda;
-  calzado?:  Prenda;
+  superior?:   Prenda;
+  inferior?:   Prenda;
+  full_body?:  Prenda;
+  abrigo?:     Prenda;
+  calzado?:    Prenda;
+  accesorios?: Prenda;
 };
 
 // Preselect climate based on Argentine Southern Hemisphere seasons.
@@ -153,8 +155,10 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
   // primary palette; calzado leads with the secondary palette (accent) and then
   // harmonises back to the primaries. Every slot still falls back gracefully.
   const colorTiersFor = (category: keyof OutfitState): string[][] => {
-    if (category === 'calzado') return [secondaryColors, primaryColors];
-    return [primaryColors, secondaryColors]; // superior, inferior, abrigo
+    // Accent slots (calzado, accesorios) lead with the secondary palette and then
+    // harmonise back to the primaries; everything else leads with the primaries.
+    if (category === 'calzado' || category === 'accesorios') return [secondaryColors, primaryColors];
+    return [primaryColors, secondaryColors]; // superior, inferior, full_body, abrigo
   };
 
   // Full per-category triage: STYLE first, then CHROMATIC, each with silent
@@ -197,10 +201,13 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
 
       // ── Group the base pool by category ──────────────────────────────────────────
       const byCat = {
-        superior: basePool.filter(i => i.category === 'superior'),
-        inferior: basePool.filter(i => i.category === 'inferior'),
-        abrigo:   basePool.filter(i => i.category === 'abrigo'),
-        calzado:  basePool.filter(i => i.category === 'calzado'),
+        superior:  basePool.filter(i => i.category === 'superior'),
+        inferior:  basePool.filter(i => i.category === 'inferior'),
+        full_body: basePool.filter(i => i.category === 'full_body'),
+        abrigo:    basePool.filter(i => i.category === 'abrigo'),
+        calzado:   basePool.filter(i => i.category === 'calzado'),
+        // Accessories aren't weather-dependent → match on formality only (clima-agnostic).
+        accesorios: items.filter(i => i.category === 'accesorios' && i.formality === selectedFormality),
       };
 
       const rand = (arr: Prenda[]): Prenda => arr[Math.floor(Math.random() * arr.length)];
@@ -236,29 +243,40 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       }
 
       // ════════════════════════════════════════════════════════════════════════════
-      // GATE 3 — Body coverage: superior + inferior required
+      // GATE 3 — Body coverage: at least ONE route must be viable
+      //   · Route A (Dos Piezas): superior + inferior
+      //   · Route B (Una Pieza):  full_body
       // ════════════════════════════════════════════════════════════════════════════
-      if (byCat.superior.length === 0 || byCat.inferior.length === 0) {
-        let msg: string;
-        if (byCat.superior.length === 0 && byCat.inferior.length === 0) {
-          msg = '¡No encontramos tops ni prendas inferiores con estos filtros! Probá cambiando la ocasión o el estilo.';
-        } else if (byCat.superior.length === 0) {
-          msg = '¡No hay prendas superiores (remeras, blusas, suéteres) que coincidan! Cambiá los filtros o cargá más prendas.';
-        } else {
-          msg = '¡No hay prendas inferiores (pantalones, polleras, jeans) que coincidan! Cambiá los filtros o cargá más prendas.';
-        }
-        fail(msg);
+      const canSeparates = byCat.superior.length > 0 && byCat.inferior.length > 0;
+      const canOnePiece  = byCat.full_body.length > 0;
+
+      if (!canSeparates && !canOnePiece) {
+        fail(
+          '¡No encontramos un conjunto (top + inferior) ni una prenda entera ' +
+          '(vestido o mono) con estos filtros! Cambiá la ocasión, el clima o cargá más prendas.'
+        );
         return;
       }
 
       // ════════════════════════════════════════════════════════════════════════════
-      // COMPOSE — all gates passed, build the outfit
+      // COMPOSE — pick a route, then complete with calzado / abrigo / accesorios
       // ════════════════════════════════════════════════════════════════════════════
+      // If both routes are viable, flip a coin; otherwise take the only one available.
+      const useOnePiece = canOnePiece && (!canSeparates || Math.random() < 0.5);
+
+      // Calzado is always present (gated above).
       const outfit: OutfitState = {
-        superior: rand(slotPool('superior', byCat.superior)),
-        inferior: rand(slotPool('inferior', byCat.inferior)),
-        calzado:  rand(slotPool('calzado',  byCat.calzado)),
+        calzado: rand(slotPool('calzado', byCat.calzado)),
       };
+
+      if (useOnePiece) {
+        // Route B (Una Pieza): full_body only → superior/inferior stay empty.
+        outfit.full_body = rand(slotPool('full_body', byCat.full_body));
+      } else {
+        // Route A (Dos Piezas): superior + inferior → full_body stays empty.
+        outfit.superior = rand(slotPool('superior', byCat.superior));
+        outfit.inferior = rand(slotPool('inferior', byCat.inferior));
+      }
 
       // Abrigo: mandatory for frío (gated above), optional for templado/calor
       if (byCat.abrigo.length > 0) {
@@ -267,6 +285,11 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         } else if (selectedClima === 'templado' && Math.random() > 0.4) {
           outfit.abrigo = rand(slotPool('abrigo', byCat.abrigo));
         }
+      }
+
+      // Accesorios: optional accent slot (~70% chance when available).
+      if (byCat.accesorios.length > 0 && Math.random() > 0.3) {
+        outfit.accesorios = rand(slotPool('accesorios', byCat.accesorios));
       }
 
       setGeneratedOutfit(outfit);
@@ -282,8 +305,9 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
     const catPool = items.filter(
       item =>
         item.category === category &&
-        item.clima     === selectedClima &&
-        item.formality === selectedFormality
+        item.formality === selectedFormality &&
+        // Accessories ignore clima (jewelry/bags aren't weather-dependent).
+        (category === 'accesorios' || item.clima === selectedClima)
     );
 
     // Same style + chromatic triage as generation, with graceful fallbacks.
@@ -306,8 +330,10 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       const itemIds = [
         generatedOutfit.superior?.id,
         generatedOutfit.inferior?.id,
+        generatedOutfit.full_body?.id,
         generatedOutfit.abrigo?.id,
         generatedOutfit.calzado?.id,
+        generatedOutfit.accesorios?.id,
       ].filter((id): id is string => id !== undefined);
 
       await insertOutfitFavorito(itemIds, outfitName.trim() || undefined);
@@ -420,23 +446,32 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         <div className={`fade-in${isShuffling ? ' shuffling' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative' }}>
 
-            {/* Top row: superior + inferior */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-              {generatedOutfit.superior && (
-                <OutfitItemCard
-                  label="Prenda Superior"
-                  item={generatedOutfit.superior}
-                  onShuffle={() => handleShuffleItem('superior')}
-                />
-              )}
-              {generatedOutfit.inferior && (
-                <OutfitItemCard
-                  label="Prenda Inferior"
-                  item={generatedOutfit.inferior}
-                  onShuffle={() => handleShuffleItem('inferior')}
-                />
-              )}
-            </div>
+            {/* Body: Route B (one-piece) shows a single highlighted card; Route A
+                shows superior + inferior side by side. */}
+            {generatedOutfit.full_body ? (
+              <OutfitItemCard
+                label="Prenda Entera"
+                item={generatedOutfit.full_body}
+                onShuffle={() => handleShuffleItem('full_body')}
+              />
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {generatedOutfit.superior && (
+                  <OutfitItemCard
+                    label="Prenda Superior"
+                    item={generatedOutfit.superior}
+                    onShuffle={() => handleShuffleItem('superior')}
+                  />
+                )}
+                {generatedOutfit.inferior && (
+                  <OutfitItemCard
+                    label="Prenda Inferior"
+                    item={generatedOutfit.inferior}
+                    onShuffle={() => handleShuffleItem('inferior')}
+                  />
+                )}
+              </div>
+            )}
 
             {/* Bottom row: abrigo + calzado */}
             <div style={{ display: 'grid', gridTemplateColumns: generatedOutfit.abrigo ? '1fr 1fr' : '1fr', gap: '12px' }}>
@@ -455,6 +490,15 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
                 />
               )}
             </div>
+
+            {/* Optional accessories accent */}
+            {generatedOutfit.accesorios && (
+              <OutfitItemCard
+                label="Accesorio"
+                item={generatedOutfit.accesorios}
+                onShuffle={() => handleShuffleItem('accesorios')}
+              />
+            )}
           </div>
 
           {/* Action buttons */}
