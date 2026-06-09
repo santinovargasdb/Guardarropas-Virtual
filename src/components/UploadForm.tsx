@@ -33,9 +33,9 @@ const FORMALITIES: { value: Prenda['formality']; label: string }[] = [
   { value: 'deportivo', label: '🏃 Deportivo' },
 ];
 
-const POPULAR_STYLES = [
-  'minimalist', 'casual', 'romantic', 'sporty', 'elegant',
-  'cozy', 'streetwear', 'boho', 'edgy',
+// Official preset styles for Gigi's Closet — exact casing is intentional.
+const PRESET_STYLES = [
+  'Jirai', 'Gotico', 'Soft', 'Cute core', 'Chill', 'Boliche',
 ];
 
 const PRESETS_COLORS = [
@@ -126,7 +126,9 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
 
   const handleAddCustomStyle = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const trimmed = customStyle.trim().toLowerCase();
+    // Preserve the user's exact casing (e.g. "Vintage", "Y2K") so custom
+    // styles read consistently with the official preset list.
+    const trimmed = customStyle.trim();
     if (trimmed && !selectedStyles.includes(trimmed)) {
       setSelectedStyles(prev => [...prev, trimmed]);
     }
@@ -349,7 +351,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
         <div className="form-group">
           <label className="form-label">Estilo / Tags</label>
           <div className="chip-container" style={{ marginBottom: '8px' }}>
-            {POPULAR_STYLES.map(style => (
+            {PRESET_STYLES.map(style => (
               <button
                 key={style}
                 type="button"
@@ -360,7 +362,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
                 #{style}
               </button>
             ))}
-            {selectedStyles.filter(s => !POPULAR_STYLES.includes(s)).map(style => (
+            {selectedStyles.filter(s => !PRESET_STYLES.includes(s)).map(style => (
               <button
                 key={style}
                 type="button"
@@ -376,7 +378,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           <form onSubmit={handleAddCustomStyle} style={{ display: 'flex', gap: '8px' }}>
             <input
               type="text"
-              placeholder="Ej: vintage, grunge"
+              placeholder="Ej: Vintage, Y2K"
               value={customStyle}
               onChange={(e) => setCustomStyle(e.target.value)}
               style={{ flex: 1, padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.9rem', outline: 'none' }}

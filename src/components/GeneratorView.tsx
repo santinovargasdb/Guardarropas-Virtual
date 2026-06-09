@@ -41,11 +41,29 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
   const generateTimeoutRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
   const saveFavoriteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Dynamically derive every unique style present in the wardrobe. Any custom
+  // style the user types when uploading a garment surfaces here automatically.
+  // Empty/whitespace tags are dropped so the dropdown never shows blank options,
+  // and the list is sorted for a tidy, deterministic order.
   const allStyles = useMemo(() => {
     const set = new Set<string>();
-    items.forEach(item => item.styles.forEach(s => set.add(s)));
-    return Array.from(set);
+    items.forEach(item => item.styles.forEach(s => {
+      const v = s.trim();
+      if (v) set.add(v);
+    }));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [items]);
+
+  // Per-category style triage. Returns the subset of a category that matches the
+  // selected style; if none match, falls back to neutral 'Chill' pieces, and as a
+  // last resort the full category — so a strict style never produces an empty slot.
+  const stylePriorityPool = (catItems: Prenda[]): Prenda[] => {
+    if (selectedStyle === 'todos' || catItems.length === 0) return catItems;
+    const styled = catItems.filter(i => i.styles.includes(selectedStyle));
+    if (styled.length > 0) return styled;
+    const neutral = catItems.filter(i => i.styles.includes('Chill'));
+    return neutral.length > 0 ? neutral : catItems;
+  };
 
   // Clear stale error whenever the user adjusts any filter
   useEffect(() => {
@@ -72,23 +90,20 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
     setShowSaveDialog(false);
 
     generateTimeoutRef.current = setTimeout(() => {
-      // ── Layer 1: primary filters (clima + formality as single-value comparisons) ──
-      let pool = items.filter(
+      // ── Base pool: clima + formality (single-value comparisons) ──────────────────
+      // We intentionally do NOT pre-filter by style here. Style is applied
+      // per-category below (stylePriorityPool) so a strict style can never empty
+      // an entire category and break the outfit (e.g. 'Boliche' with no calzado).
+      const basePool = items.filter(
         item => item.clima === selectedClima && item.formality === selectedFormality
       );
 
-      // ── Layer 2: style soft-filter — never narrows to empty ─────────────────────
-      if (selectedStyle !== 'todos') {
-        const stylePool = pool.filter(item => item.styles.includes(selectedStyle));
-        if (stylePool.length > 0) pool = stylePool;
-      }
-
-      // ── Layer 3: group filtered pool by category ─────────────────────────────────
+      // ── Group the base pool by category ──────────────────────────────────────────
       const byCat = {
-        superior: pool.filter(i => i.category === 'superior'),
-        inferior: pool.filter(i => i.category === 'inferior'),
-        abrigo:   pool.filter(i => i.category === 'abrigo'),
-        calzado:  pool.filter(i => i.category === 'calzado'),
+        superior: basePool.filter(i => i.category === 'superior'),
+        inferior: basePool.filter(i => i.category === 'inferior'),
+        abrigo:   basePool.filter(i => i.category === 'abrigo'),
+        calzado:  basePool.filter(i => i.category === 'calzado'),
       };
 
       const rand = (arr: Prenda[]): Prenda => arr[Math.floor(Math.random() * arr.length)];
@@ -143,17 +158,17 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       // COMPOSE — all gates passed, build the outfit
       // ════════════════════════════════════════════════════════════════════════════
       const outfit: OutfitState = {
-        superior: rand(byCat.superior),
-        inferior: rand(byCat.inferior),
-        calzado:  rand(byCat.calzado),
+        superior: rand(stylePriorityPool(byCat.superior)),
+        inferior: rand(stylePriorityPool(byCat.inferior)),
+        calzado:  rand(stylePriorityPool(byCat.calzado)),
       };
 
       // Abrigo: mandatory for frío (gated above), optional for templado/calor
       if (byCat.abrigo.length > 0) {
         if (selectedClima === 'frio') {
-          outfit.abrigo = rand(byCat.abrigo);
+          outfit.abrigo = rand(stylePriorityPool(byCat.abrigo));
         } else if (selectedClima === 'templado' && Math.random() > 0.4) {
-          outfit.abrigo = rand(byCat.abrigo);
+          outfit.abrigo = rand(stylePriorityPool(byCat.abrigo));
         }
       }
 
@@ -167,17 +182,15 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
   const handleShuffleItem = (category: keyof OutfitState) => {
     if (!generatedOutfit) return;
 
-    let pool = items.filter(
+    const catPool = items.filter(
       item =>
         item.category === category &&
         item.clima     === selectedClima &&
         item.formality === selectedFormality
     );
 
-    if (selectedStyle !== 'todos') {
-      const stylePool = pool.filter(item => item.styles.includes(selectedStyle));
-      if (stylePool.length > 0) pool = stylePool;
-    }
+    // Same style-priority triage as generation, with graceful neutral fallback.
+    const pool = stylePriorityPool(catPool);
 
     const currentId  = generatedOutfit[category]?.id;
     const cleanPool  = pool.filter(i => i.id !== currentId);

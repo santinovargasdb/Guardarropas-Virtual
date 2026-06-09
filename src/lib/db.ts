@@ -1,8 +1,10 @@
 import { supabase, isSupabaseConfigured } from './supabase';
 import type { Prenda, OutfitFavorito } from '../types';
 
-// Increment when the Prenda interface changes to force a LocalStorage schema reset.
-const SCHEMA_VERSION = 'v3';
+// Increment when the Prenda interface OR the demo dataset changes to force a
+// LocalStorage migration + one-time demo refresh.
+// v4: official styles (Jirai, Gotico, Soft, Cute core, Chill, Boliche).
+const SCHEMA_VERSION = 'v4';
 const LS_SCHEMA_KEY  = 'wardrobe_schema_version';
 
 // One-time demo-seeding marker. Stores the SCHEMA_VERSION it ran under, so a
@@ -63,7 +65,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'superior',
     clima: 'templado',
     formality: 'casual',
-    styles: ['minimalist', 'casual'],
+    styles: ['Soft', 'Cute core'],
     colors: ['#FFFFFF'],
     notas_ia: 'Remera de algodón en blanco, corte recto clásico. Base perfecta para cualquier combinación.',
     tags_ia: ['básico', 'algodón', 'corte recto', 'versátil'],
@@ -75,7 +77,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'superior',
     clima: 'frio',
     formality: 'casual',
-    styles: ['cozy', 'minimalist'],
+    styles: ['Chill', 'Soft'],
     colors: ['#D7C0AE'],
     notas_ia: 'Suéter de punto grueso en tono arena, textura acogedora. Ideal para capas en invierno.',
     tags_ia: ['tejido de punto', 'oversized', 'cozy', 'neutro'],
@@ -87,7 +89,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'inferior',
     clima: 'frio',
     formality: 'casual',
-    styles: ['streetwear', 'casual'],
+    styles: ['Chill', 'Boliche'],
     colors: ['#3E54AC'],
     notas_ia: 'Jean de corte recto en azul clásico, lavado medio. Ícono del streetwear cotidiano.',
     tags_ia: ['denim', 'corte recto', 'azul medio', 'clásico'],
@@ -99,7 +101,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'inferior',
     clima: 'calor',
     formality: 'casual',
-    styles: ['minimalist', 'elegant'],
+    styles: ['Soft', 'Cute core'],
     colors: ['#F5EBE0'],
     notas_ia: 'Pantalón fluido en crema, cintura alta. Sofisticado y fácil de combinar.',
     tags_ia: ['fluido', 'cintura alta', 'crema', 'elegante'],
@@ -111,7 +113,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'abrigo',
     clima: 'frio',
     formality: 'formal',
-    styles: ['elegant', 'minimalist'],
+    styles: ['Gotico', 'Jirai'],
     colors: ['#A084CF'],
     notas_ia: 'Tapado largo en lila pastel, fibra suave estructurada. Ideal para salidas formales de invierno.',
     tags_ia: ['tapado largo', 'color pastel', 'estructurado', 'formal'],
@@ -123,7 +125,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'abrigo',
     clima: 'templado',
     formality: 'casual',
-    styles: ['streetwear', 'casual'],
+    styles: ['Chill', 'Boliche'],
     colors: ['#4E6C50'],
     notas_ia: 'Campera bomber en verde militar, tela ligera. Versátil y urbana.',
     tags_ia: ['bomber', 'verde militar', 'ligera', 'urbana'],
@@ -135,7 +137,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'calzado',
     clima: 'templado',
     formality: 'casual',
-    styles: ['minimalist', 'sporty'],
+    styles: ['Chill', 'Soft'],
     colors: ['#FFFFFF'],
     notas_ia: 'Zapatillas blancas suela chunky. Complemento urbano para looks casuales.',
     tags_ia: ['zapatillas', 'chunky', 'blancas', 'deportivo'],
@@ -147,7 +149,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'calzado',
     clima: 'frio',
     formality: 'formal',
-    styles: ['elegant', 'edgy'],
+    styles: ['Gotico', 'Boliche'],
     colors: ['#1A1A1A'],
     notas_ia: 'Botines de cuero negro, taco bajo redondeado. Clásico con actitud.',
     tags_ia: ['botines', 'cuero', 'negro', 'taco bajo'],
@@ -159,7 +161,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'superior',
     clima: 'calor',
     formality: 'formal',
-    styles: ['elegant', 'romantic'],
+    styles: ['Boliche', 'Cute core'],
     colors: ['#2F4F4F'],
     notas_ia: 'Blusa liviana en verde oscuro, escote sutil. Perfecta para ocasiones especiales en verano.',
     tags_ia: ['blusa', 'liviana', 'formal', 'verano'],
@@ -171,7 +173,7 @@ const MOCK_PRENDAS: Prenda[] = [
     category: 'inferior',
     clima: 'templado',
     formality: 'deportivo',
-    styles: ['sporty', 'casual'],
+    styles: ['Chill', 'Jirai'],
     colors: ['#8D4B32'],
     notas_ia: 'Pantalón deportivo de corte ajustado, tela elástica cómoda. Para looks activos y urbanos.',
     tags_ia: ['deportivo', 'elástico', 'comfy', 'activo'],
@@ -179,16 +181,42 @@ const MOCK_PRENDAS: Prenda[] = [
   },
 ];
 
+// ── Legacy demo detection (for schema migrations) ─────────────────────────────
+// Pre-v4 demo seeds carried these generic style tags (and, in the earliest
+// builds, hardcoded "mock-N" ids). We use this to purge ONLY stale demo records
+// on upgrade, while preserving any garment the user created themselves.
+const OLD_GENERIC_STYLES = new Set([
+  'minimalist', 'casual', 'romantic', 'sporty', 'elegant',
+  'cozy', 'streetwear', 'boho', 'edgy',
+]);
+
+function isLegacyDemoPrenda(p: Prenda): boolean {
+  if (p.id.startsWith('mock-')) return true;
+  return p.styles.some(s => OLD_GENERIC_STYLES.has(s));
+}
+
 // ── LocalStorage init with schema guard ──────────────────────────────────────
 
 const initLocalStorage = () => {
   if (localStorage.getItem(LS_SCHEMA_KEY) !== SCHEMA_VERSION) {
-    // Schema changed: reset to an EMPTY wardrobe and clear favorites to avoid
-    // orphaned/invalid data. Demo content is no longer injected here — the
-    // one-time seedDemoDataIfNeeded() loop is the single source of truth for
-    // demo data across both Supabase and LocalStorage backends.
-    localStorage.setItem('wardrobe_prendas', JSON.stringify([]));
+    // Schema upgrade: purge stale demo records but PRESERVE user-created garments.
+    // If the wardrobe held ONLY old demo data it becomes empty here, and
+    // seedDemoDataIfNeeded() then injects the fresh v4 MOCK_PRENDAS. If the user
+    // had created real garments, those survive and no re-seed occurs.
+    const raw = localStorage.getItem('wardrobe_prendas');
+    let surviving: Prenda[] = [];
+    if (raw) {
+      try {
+        surviving = (JSON.parse(raw) as unknown[])
+          .map(normalizePrenda)
+          .filter(p => !isLegacyDemoPrenda(p));
+      } catch {
+        surviving = [];
+      }
+    }
+    localStorage.setItem('wardrobe_prendas', JSON.stringify(surviving));
     localStorage.setItem(LS_SCHEMA_KEY, SCHEMA_VERSION);
+    // Favorites may reference purged demo items → clear to avoid orphan refs.
     localStorage.removeItem('wardrobe_favorites');
   } else if (!localStorage.getItem('wardrobe_prendas')) {
     localStorage.setItem('wardrobe_prendas', JSON.stringify([]));
