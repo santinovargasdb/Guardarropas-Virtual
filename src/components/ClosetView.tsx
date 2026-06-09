@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Trash2, ShoppingBag, Sparkles, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, LayoutGrid } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Trash2, ShoppingBag, Sparkles, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, LayoutGrid, ChevronDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Prenda } from '../types';
 import { deletePrenda } from '../lib/db';
@@ -67,33 +67,13 @@ export function ClosetView({ items, onRefresh }: ClosetViewProps) {
           : `${filteredItems.length} de ${items.length} prendas · ${activeTabLabel}`}
       </p>
 
-      {/* ── Category filter strip (horizontal scroll, mobile-friendly) ── */}
-      <div
-        style={{
-          display: 'flex',
-          overflowX: 'auto',
-          gap: '8px',
-          paddingBottom: '12px',
-          marginBottom: '16px',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
-        }}
-      >
-        {CATEGORY_TABS.map(tab => {
-          const count = getCount(tab.value);
-          const Icon = tab.icon;
-          return (
-            <button
-              key={tab.value}
-              className={`chip ${activeTab === tab.value ? 'selected' : ''}`}
-              onClick={() => setActiveTab(tab.value)}
-              style={{ flexShrink: 0, padding: '8px 14px', fontSize: '0.83rem', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-            >
-              <Icon size={13} /> {tab.label} ({count})
-            </button>
-          );
-        })}
-      </div>
+      {/* ── Category filter dropdown ── */}
+      <CategoryDropdown
+        tabs={CATEGORY_TABS}
+        activeTab={activeTab}
+        getCount={getCount}
+        onSelect={setActiveTab}
+      />
 
       {/* ── Closet Grid ── */}
       {filteredItems.length === 0 ? (
@@ -239,6 +219,140 @@ export function ClosetView({ items, onRefresh }: ClosetViewProps) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Child component: Category Dropdown (replaces the horizontal filter strip) ──
+
+interface CategoryDropdownProps {
+  tabs: { value: string; label: string; icon: LucideIcon }[];
+  activeTab: string;
+  getCount: (value: string) => number;
+  onSelect: (value: string) => void;
+}
+
+function CategoryDropdown({ tabs, activeTab, getCount, onSelect }: CategoryDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close when clicking outside the dropdown
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const active = tabs.find(t => t.value === activeTab) ?? tabs[0];
+  const ActiveIcon = active.icon;
+
+  return (
+    <div ref={ref} style={{ position: 'relative', marginBottom: '16px' }}>
+      {/* Trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        style={{
+          width: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '10px',
+          padding: '12px 16px',
+          borderRadius: 'var(--radius-md)',
+          border: `1px solid ${open ? 'var(--accent-color)' : 'var(--panel-border)'}`,
+          backgroundColor: 'var(--panel-bg)',
+          color: 'var(--text-primary)',
+          fontFamily: 'var(--font-sans)',
+          fontSize: '0.9rem',
+          fontWeight: 500,
+          cursor: 'pointer',
+          boxShadow: 'var(--shadow-sm)',
+          transition: 'border-color 0.2s ease',
+        }}
+      >
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}>
+          <ActiveIcon size={17} style={{ color: 'var(--accent-color)' }} />
+          {active.label}
+          <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>({getCount(active.value)})</span>
+        </span>
+        <ChevronDown
+          size={18}
+          style={{
+            color: 'var(--text-secondary)',
+            transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s ease',
+            flexShrink: 0,
+          }}
+        />
+      </button>
+
+      {/* Options panel */}
+      {open && (
+        <div
+          role="listbox"
+          className="pop-in"
+          style={{
+            position: 'absolute',
+            top: 'calc(100% + 6px)',
+            left: 0,
+            right: 0,
+            zIndex: 50,
+            padding: '6px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '2px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--panel-border)',
+            backgroundColor: 'var(--bg-color)',
+            boxShadow: 'var(--shadow-lg)',
+            maxHeight: '320px',
+            overflowY: 'auto',
+          }}
+        >
+          {tabs.map(tab => {
+            const Icon = tab.icon;
+            const isActive = tab.value === activeTab;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                role="option"
+                aria-selected={isActive}
+                onClick={() => { onSelect(tab.value); setOpen(false); }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  width: '100%',
+                  padding: '11px 12px',
+                  border: 'none',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: isActive ? 'rgba(212, 163, 115, 0.14)' : 'transparent',
+                  color: isActive ? 'var(--accent-color)' : 'var(--text-primary)',
+                  fontFamily: 'var(--font-sans)',
+                  fontSize: '0.88rem',
+                  fontWeight: isActive ? 600 : 500,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'var(--accent-light)'; }}
+                onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.backgroundColor = 'transparent'; }}
+              >
+                <Icon size={16} style={{ color: isActive ? 'var(--accent-color)' : 'var(--text-secondary)', flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>{tab.label}</span>
+                <span style={{ fontSize: '0.8rem', opacity: 0.65 }}>({getCount(tab.value)})</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
