@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { PlusCircle, Shirt, Sparkles, Heart, Info } from 'lucide-react';
-import { getPrendas, getOutfitsFavoritos } from './lib/db';
+import { getPrendas, getOutfitsFavoritos, seedDemoDataIfNeeded } from './lib/db';
 import { isSupabaseConfigured } from './lib/supabase';
 import type { Prenda, OutfitFavorito } from './types';
 import { UploadForm } from './components/UploadForm';
@@ -22,6 +22,8 @@ function App() {
   const loadData = async () => {
     setIsLoading(true);
     try {
+      // Run-once demo injection on first launch so the wardrobe is never empty.
+      await seedDemoDataIfNeeded();
       const p = await getPrendas();
       const f = await getOutfitsFavoritos();
       setPrendas(p);

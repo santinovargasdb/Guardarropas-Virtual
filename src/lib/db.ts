@@ -5,6 +5,11 @@ import type { Prenda, OutfitFavorito } from '../types';
 const SCHEMA_VERSION = 'v3';
 const LS_SCHEMA_KEY  = 'wardrobe_schema_version';
 
+// One-time demo-seeding marker. Stores the SCHEMA_VERSION it ran under, so a
+// future schema bump permits exactly one fresh re-seed. Once set, seeding never
+// re-triggers — not even if the user deletes every demo item.
+const SEED_FLAG_KEY  = 'wardrobe_seeded';
+
 // ── Type-safe coercers ────────────────────────────────────────────────────────
 // Each helper handles both current v3 values and legacy v1/v2 values so that
 // old LocalStorage records are silently migrated on first read.
@@ -178,14 +183,58 @@ const MOCK_PRENDAS: Prenda[] = [
 
 const initLocalStorage = () => {
   if (localStorage.getItem(LS_SCHEMA_KEY) !== SCHEMA_VERSION) {
-    // Schema changed: reset wardrobe and favorites to avoid orphaned/invalid data
-    localStorage.setItem('wardrobe_prendas', JSON.stringify(MOCK_PRENDAS));
+    // Schema changed: reset to an EMPTY wardrobe and clear favorites to avoid
+    // orphaned/invalid data. Demo content is no longer injected here — the
+    // one-time seedDemoDataIfNeeded() loop is the single source of truth for
+    // demo data across both Supabase and LocalStorage backends.
+    localStorage.setItem('wardrobe_prendas', JSON.stringify([]));
     localStorage.setItem(LS_SCHEMA_KEY, SCHEMA_VERSION);
     localStorage.removeItem('wardrobe_favorites');
   } else if (!localStorage.getItem('wardrobe_prendas')) {
-    localStorage.setItem('wardrobe_prendas', JSON.stringify(MOCK_PRENDAS));
+    localStorage.setItem('wardrobe_prendas', JSON.stringify([]));
   }
 };
+
+// ── Automatic demo seeding (run-once, idempotent) ─────────────────────────────
+// On first launch, if the active backend returns an empty wardrobe, inject the
+// 10 premium demo items so the app never shows an empty first impression.
+//
+// Idempotency is guaranteed by a persistent flag (SEED_FLAG_KEY): the evaluation
+// runs EXACTLY ONCE per schema version. After it completes, deleting demo items
+// or removing everything will NOT re-trigger seeding, and no data is duplicated.
+export async function seedDemoDataIfNeeded(): Promise<void> {
+  // Already evaluated for this schema version → never seed again.
+  if (localStorage.getItem(SEED_FLAG_KEY) === SCHEMA_VERSION) return;
+
+  try {
+    const existing = await getPrendas();
+
+    // Only inject when the wardrobe is completely empty. If the user already
+    // has at least one item (manual or otherwise), we skip injection entirely.
+    if (existing.length === 0) {
+      for (const mock of MOCK_PRENDAS) {
+        await insertPrenda({
+          image_url: mock.image_url,
+          category:  mock.category,
+          clima:     mock.clima,
+          formality: mock.formality,
+          styles:    mock.styles,
+          colors:    mock.colors,
+          notas_ia:  mock.notas_ia,
+          tags_ia:   mock.tags_ia,
+        });
+      }
+    }
+  } catch (err) {
+    // Don't set the flag on failure → seeding is retried on the next launch.
+    console.error('Demo seeding failed; will retry next launch', err);
+    return;
+  }
+
+  // Mark as evaluated whether we injected demo items or the wardrobe already
+  // had content — this is what makes the process strictly run-once.
+  localStorage.setItem(SEED_FLAG_KEY, SCHEMA_VERSION);
+}
 
 // ── PRENDAS ──────────────────────────────────────────────────────────────────
 
