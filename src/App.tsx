@@ -47,7 +47,7 @@ function App() {
     <div className="app-shell">
       {/* Header */}
       <header style={{ padding: '24px 20px 8px', borderBottom: '1px solid var(--panel-border)', background: 'var(--panel-bg)' }}>
-        <h1 className="brand-title">Gigi's Closet</h1>
+        <h1 className="brand-title" style={{ letterSpacing: '0.02em' }}>Luci's Closet</h1>
         <p className="subtitle" style={{ margin: 0 }}>Mi Placard Virtual</p>
       </header>
 

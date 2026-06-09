@@ -158,6 +158,27 @@ export function ClosetView({ items, onRefresh }: ClosetViewProps) {
                   ))}
                 </div>
 
+                {/* ── Color swatches ── */}
+                {item.colors.length > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                    {item.colors.slice(0, 5).map((c, idx) => (
+                      <span
+                        key={`${c}-${idx}`}
+                        title={c}
+                        style={{
+                          width: '13px',
+                          height: '13px',
+                          borderRadius: '50%',
+                          backgroundColor: c,
+                          border: '1px solid rgba(0, 0, 0, 0.12)',
+                          boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)',
+                          flexShrink: 0,
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+
                 {/* ── IA Metadata ── */}
                 <div
                   style={{

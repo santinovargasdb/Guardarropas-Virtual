@@ -33,7 +33,7 @@ const FORMALITIES: { value: Prenda['formality']; label: string }[] = [
   { value: 'deportivo', label: '🏃 Deportivo' },
 ];
 
-// Official preset styles for Gigi's Closet — exact casing is intentional.
+// Official preset styles for Luci's Closet — exact casing is intentional.
 const PRESET_STYLES = [
   'Jirai', 'Gotico', 'Soft', 'Cute core', 'Chill', 'Boliche',
 ];
@@ -60,8 +60,9 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   const [category,       setCategory]       = useState<Prenda['category']>('superior');
   const [clima,          setClima]          = useState<Prenda['clima']>('templado');
   const [formality,      setFormality]      = useState<Prenda['formality']>('casual');
-  const [selectedColors, setSelectedColors] = useState<string[]>([]);
-  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  const [primaryColors,   setPrimaryColors]   = useState<string[]>([]);
+  const [secondaryColors, setSecondaryColors] = useState<string[]>([]);
+  const [selectedStyles,  setSelectedStyles]  = useState<string[]>([]);
   const [customStyle,    setCustomStyle]    = useState('');
   const [isUploading,    setIsUploading]    = useState(false);
   const [uploadSuccess,  setUploadSuccess]  = useState(false);
@@ -86,7 +87,8 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     setCategory('superior');
     setClima('templado');
     setFormality('casual');
-    setSelectedColors([]);
+    setPrimaryColors([]);
+    setSecondaryColors([]);
     setSelectedStyles([]);
     setCustomStyle('');
     setErrorMsg(null);
@@ -118,8 +120,11 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     setErrorMsg(null);
   };
 
-  const toggleColor = (hex: string) =>
-    setSelectedColors(prev => prev.includes(hex) ? prev.filter(c => c !== hex) : [...prev, hex]);
+  const togglePrimaryColor = (hex: string) =>
+    setPrimaryColors(prev => prev.includes(hex) ? prev.filter(c => c !== hex) : [...prev, hex]);
+
+  const toggleSecondaryColor = (hex: string) =>
+    setSecondaryColors(prev => prev.includes(hex) ? prev.filter(c => c !== hex) : [...prev, hex]);
 
   const toggleStyle = (style: string) =>
     setSelectedStyles(prev => prev.includes(style) ? prev.filter(s => s !== style) : [...prev, style]);
@@ -162,14 +167,18 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
       // Step 3 — Upload to Supabase Storage or encode to Base64 for LocalStorage
       const imageUrl = await uploadPrendaImage(compressed);
 
-      // Step 4 — Persist garment metadata
+      // Step 4 — Persist garment metadata. `colors` is the deduped union of both
+      // palettes so the generator's chromatic triage can read one flat list.
+      const colors = Array.from(new Set([...primaryColors, ...secondaryColors]));
       await insertPrenda({
         image_url: imageUrl,
         category,
         clima,
         formality,
         styles: selectedStyles,
-        colors: selectedColors,
+        colors,
+        primary_colors: primaryColors,
+        secondary_colors: secondaryColors,
       });
 
       resetForm();
@@ -322,29 +331,16 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           </div>
         </div>
 
-        {/* Colors */}
+        {/* Primary colors */}
         <div className="form-group">
-          <label className="form-label">Colores Predominantes</label>
-          <div className="color-picker">
-            {PRESETS_COLORS.map(col => (
-              <button
-                key={col.hex}
-                type="button"
-                className={`color-dot ${selectedColors.includes(col.hex) ? 'selected' : ''}`}
-                style={{ backgroundColor: col.hex, border: col.hasBorder ? '1px solid #CCC' : undefined }}
-                onClick={() => toggleColor(col.hex)}
-                title={col.name}
-              >
-                {selectedColors.includes(col.hex) && (
-                  <Check
-                    size={14}
-                    color={LIGHT_SWATCHES.has(col.hex) ? '#1A1A1A' : '#FFFFFF'}
-                    style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
-                  />
-                )}
-              </button>
-            ))}
-          </div>
+          <label className="form-label">Color Principal</label>
+          <ColorPickerRow selected={primaryColors} onToggle={togglePrimaryColor} />
+        </div>
+
+        {/* Secondary colors */}
+        <div className="form-group">
+          <label className="form-label">Color Secundario</label>
+          <ColorPickerRow selected={secondaryColors} onToggle={toggleSecondaryColor} />
         </div>
 
         {/* Style tags */}
@@ -422,6 +418,40 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Child component: Color Picker Row (multi-select preset swatches) ───────────
+
+interface ColorPickerRowProps {
+  selected: string[];
+  onToggle: (hex: string) => void;
+}
+
+function ColorPickerRow({ selected, onToggle }: ColorPickerRowProps) {
+  return (
+    <div className="color-picker">
+      {PRESETS_COLORS.map(col => (
+        <button
+          key={col.hex}
+          type="button"
+          className={`color-dot ${selected.includes(col.hex) ? 'selected' : ''}`}
+          style={{ backgroundColor: col.hex, border: col.hasBorder ? '1px solid #CCC' : undefined }}
+          onClick={() => onToggle(col.hex)}
+          title={col.name}
+          aria-label={col.name}
+          aria-pressed={selected.includes(col.hex)}
+        >
+          {selected.includes(col.hex) && (
+            <Check
+              size={14}
+              color={LIGHT_SWATCHES.has(col.hex) ? '#1A1A1A' : '#FFFFFF'}
+              style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+            />
+          )}
+        </button>
+      ))}
     </div>
   );
 }

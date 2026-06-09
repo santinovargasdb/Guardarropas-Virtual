@@ -4,7 +4,8 @@ import type { Prenda, OutfitFavorito } from '../types';
 // Increment when the Prenda interface OR the demo dataset changes to force a
 // LocalStorage migration + one-time demo refresh.
 // v4: official styles (Jirai, Gotico, Soft, Cute core, Chill, Boliche).
-const SCHEMA_VERSION = 'v4';
+// v5: primary/secondary colour roles + colour-rich demo data.
+const SCHEMA_VERSION = 'v5';
 const LS_SCHEMA_KEY  = 'wardrobe_schema_version';
 
 // One-time demo-seeding marker. Stores the SCHEMA_VERSION it ran under, so a
@@ -36,20 +37,34 @@ function toFormality(v: unknown): Prenda['formality'] {
   return 'casual';
 }
 
-// Guarantees every Prenda from any source conforms to the v3 interface.
-// Ensures styles, colors, and tags_ia are always arrays, never undefined.
+function toStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+}
+
+// Guarantees every Prenda from any source conforms to the current interface.
+// Colour roles: pre-v5 records only had a flat `colors` array, which we migrate
+// into `primary_colors`. `colors` is always kept as the deduped union of
+// primary + secondary so the generator/closet can read a single flat list.
 function normalizePrenda(raw: unknown): Prenda {
   const r = raw as Record<string, unknown>;
+
+  const rawPrimary       = toStringArray(r.primary_colors);
+  const primary_colors   = rawPrimary.length > 0 ? rawPrimary : toStringArray(r.colors);
+  const secondary_colors = toStringArray(r.secondary_colors);
+  const colors           = Array.from(new Set([...primary_colors, ...secondary_colors]));
+
   return {
     id:        String(r.id ?? ''),
     image_url: String(r.image_url ?? ''),
     category:  toCategory(r.category),
     clima:     toClima(r.clima ?? r.weather),   // accept both field names
     formality: toFormality(r.formality),
-    styles:    Array.isArray(r.styles)  ? (r.styles  as string[]) : [],
-    colors:    Array.isArray(r.colors)  ? (r.colors  as string[]) : [],
+    styles:    toStringArray(r.styles),
+    colors,
+    primary_colors,
+    secondary_colors,
     notas_ia:  typeof r.notas_ia  === 'string' ? r.notas_ia  : undefined,
-    tags_ia:   Array.isArray(r.tags_ia) ? (r.tags_ia as string[]) : [],
+    tags_ia:   toStringArray(r.tags_ia),
     created_at: typeof r.created_at === 'string' ? r.created_at : new Date().toISOString(),
   };
 }
@@ -66,7 +81,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'templado',
     formality: 'casual',
     styles: ['Soft', 'Cute core'],
-    colors: ['#FFFFFF'],
+    colors: ['#FFFFFF', '#FFC0CB'],
+    primary_colors: ['#FFFFFF'],
+    secondary_colors: ['#FFC0CB'],
     notas_ia: 'Remera de algodón en blanco, corte recto clásico. Base perfecta para cualquier combinación.',
     tags_ia: ['básico', 'algodón', 'corte recto', 'versátil'],
     created_at: new Date().toISOString(),
@@ -78,7 +95,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'frio',
     formality: 'casual',
     styles: ['Chill', 'Soft'],
-    colors: ['#D7C0AE'],
+    colors: ['#D7C0AE', '#704214'],
+    primary_colors: ['#D7C0AE'],
+    secondary_colors: ['#704214'],
     notas_ia: 'Suéter de punto grueso en tono arena, textura acogedora. Ideal para capas en invierno.',
     tags_ia: ['tejido de punto', 'oversized', 'cozy', 'neutro'],
     created_at: new Date().toISOString(),
@@ -90,7 +109,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'frio',
     formality: 'casual',
     styles: ['Chill', 'Boliche'],
-    colors: ['#3E54AC'],
+    colors: ['#3E54AC', '#FFFFFF'],
+    primary_colors: ['#3E54AC'],
+    secondary_colors: ['#FFFFFF'],
     notas_ia: 'Jean de corte recto en azul clásico, lavado medio. Ícono del streetwear cotidiano.',
     tags_ia: ['denim', 'corte recto', 'azul medio', 'clásico'],
     created_at: new Date().toISOString(),
@@ -102,7 +123,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'calor',
     formality: 'casual',
     styles: ['Soft', 'Cute core'],
-    colors: ['#F5EBE0'],
+    colors: ['#F5EBE0', '#E1AD01'],
+    primary_colors: ['#F5EBE0'],
+    secondary_colors: ['#E1AD01'],
     notas_ia: 'Pantalón fluido en crema, cintura alta. Sofisticado y fácil de combinar.',
     tags_ia: ['fluido', 'cintura alta', 'crema', 'elegante'],
     created_at: new Date().toISOString(),
@@ -114,7 +137,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'frio',
     formality: 'formal',
     styles: ['Gotico', 'Jirai'],
-    colors: ['#A084CF'],
+    colors: ['#A084CF', '#1A1A1A'],
+    primary_colors: ['#A084CF'],
+    secondary_colors: ['#1A1A1A'],
     notas_ia: 'Tapado largo en lila pastel, fibra suave estructurada. Ideal para salidas formales de invierno.',
     tags_ia: ['tapado largo', 'color pastel', 'estructurado', 'formal'],
     created_at: new Date().toISOString(),
@@ -126,7 +151,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'templado',
     formality: 'casual',
     styles: ['Chill', 'Boliche'],
-    colors: ['#4E6C50'],
+    colors: ['#4E6C50', '#1A1A1A'],
+    primary_colors: ['#4E6C50'],
+    secondary_colors: ['#1A1A1A'],
     notas_ia: 'Campera bomber en verde militar, tela ligera. Versátil y urbana.',
     tags_ia: ['bomber', 'verde militar', 'ligera', 'urbana'],
     created_at: new Date().toISOString(),
@@ -138,7 +165,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'templado',
     formality: 'casual',
     styles: ['Chill', 'Soft'],
-    colors: ['#FFFFFF'],
+    colors: ['#FFFFFF', '#8E918F'],
+    primary_colors: ['#FFFFFF'],
+    secondary_colors: ['#8E918F'],
     notas_ia: 'Zapatillas blancas suela chunky. Complemento urbano para looks casuales.',
     tags_ia: ['zapatillas', 'chunky', 'blancas', 'deportivo'],
     created_at: new Date().toISOString(),
@@ -150,7 +179,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'frio',
     formality: 'formal',
     styles: ['Gotico', 'Boliche'],
-    colors: ['#1A1A1A'],
+    colors: ['#1A1A1A', '#8E918F'],
+    primary_colors: ['#1A1A1A'],
+    secondary_colors: ['#8E918F'],
     notas_ia: 'Botines de cuero negro, taco bajo redondeado. Clásico con actitud.',
     tags_ia: ['botines', 'cuero', 'negro', 'taco bajo'],
     created_at: new Date().toISOString(),
@@ -162,7 +193,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'calor',
     formality: 'formal',
     styles: ['Boliche', 'Cute core'],
-    colors: ['#2F4F4F'],
+    colors: ['#2F4F4F', '#FFFFFF'],
+    primary_colors: ['#2F4F4F'],
+    secondary_colors: ['#FFFFFF'],
     notas_ia: 'Blusa liviana en verde oscuro, escote sutil. Perfecta para ocasiones especiales en verano.',
     tags_ia: ['blusa', 'liviana', 'formal', 'verano'],
     created_at: new Date().toISOString(),
@@ -174,7 +207,9 @@ const MOCK_PRENDAS: Prenda[] = [
     clima: 'templado',
     formality: 'deportivo',
     styles: ['Chill', 'Jirai'],
-    colors: ['#8D4B32'],
+    colors: ['#8D4B32', '#1A1A1A'],
+    primary_colors: ['#8D4B32'],
+    secondary_colors: ['#1A1A1A'],
     notas_ia: 'Pantalón deportivo de corte ajustado, tela elástica cómoda. Para looks activos y urbanos.',
     tags_ia: ['deportivo', 'elástico', 'comfy', 'activo'],
     created_at: new Date().toISOString(),
@@ -192,6 +227,9 @@ const OLD_GENERIC_STYLES = new Set([
 
 function isLegacyDemoPrenda(p: Prenda): boolean {
   if (p.id.startsWith('mock-')) return true;
+  // Every demo seed uses an Unsplash image; user uploads never do. This reliably
+  // refreshes stale demo data on upgrade while preserving real user garments.
+  if (p.image_url.includes('images.unsplash.com')) return true;
   return p.styles.some(s => OLD_GENERIC_STYLES.has(s));
 }
 
