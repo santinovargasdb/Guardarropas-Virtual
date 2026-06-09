@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { RefreshCw, Heart, AlertCircle, Sparkles } from 'lucide-react';
+import { RefreshCw, Heart, AlertCircle, Sparkles, Check } from 'lucide-react';
 import type { Prenda } from '../types';
 import { insertOutfitFavorito } from '../lib/db';
 
@@ -24,10 +24,89 @@ function getDefaultClima(): Prenda['clima'] {
   return 'templado';
 }
 
+// ── Chromatic engine ──────────────────────────────────────────────────────────
+// Garment colours come from arbitrary hexes (presets AND legacy demo data), so we
+// classify every hex into a coarse colour family. Filters then match by family,
+// which is robust to slight hex differences and powers the silent fallbacks.
+type ColorFamily = {
+  key: string;
+  name: string;
+  hex: string;                       // swatch shown in the UI
+  rgb: [number, number, number];     // reference point for nearest-family matching
+  light?: boolean;                   // light swatch → render a dark checkmark
+};
+
+const COLOR_FAMILIES: ColorFamily[] = [
+  { key: 'blanco',  name: 'Blanco',  hex: '#FFFFFF', rgb: [255, 255, 255], light: true },
+  { key: 'crema',   name: 'Crema',   hex: '#EAD9C0', rgb: [234, 217, 192], light: true },
+  { key: 'gris',    name: 'Gris',    hex: '#8E918F', rgb: [142, 145, 143] },
+  { key: 'negro',   name: 'Negro',   hex: '#1A1A1A', rgb: [26, 26, 26] },
+  { key: 'rosa',    name: 'Rosa',    hex: '#FFC0CB', rgb: [255, 192, 203], light: true },
+  { key: 'rojo',    name: 'Rojo',    hex: '#C0392B', rgb: [192, 57, 43] },
+  { key: 'marron',  name: 'Marrón',  hex: '#704214', rgb: [112, 66, 20] },
+  { key: 'mostaza', name: 'Mostaza', hex: '#E1AD01', rgb: [225, 173, 1], light: true },
+  { key: 'verde',   name: 'Verde',   hex: '#2E8B57', rgb: [46, 139, 87] },
+  { key: 'azul',    name: 'Azul',    hex: '#2A52BE', rgb: [42, 82, 190] },
+  { key: 'lila',    name: 'Lila',    hex: '#A084CF', rgb: [160, 132, 207] },
+];
+
+// Neutral families used as the last graceful fallback before "anything goes".
+const NEUTRAL_KEYS = ['blanco', 'negro', 'gris'];
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const v = hex.trim().replace(/^#/, '');
+  if (/^[0-9a-fA-F]{6}$/.test(v)) {
+    const n = parseInt(v, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  if (/^[0-9a-fA-F]{3}$/.test(v)) {
+    const n = parseInt(v.split('').map(c => c + c).join(''), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  return null;
+}
+
+// Map an arbitrary hex to its nearest colour family (Euclidean RGB distance).
+function classifyColor(hex: string): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return 'gris';
+  const [r, g, b] = rgb;
+  let bestKey = 'gris';
+  let bestDist = Infinity;
+  for (const fam of COLOR_FAMILIES) {
+    const d = (r - fam.rgb[0]) ** 2 + (g - fam.rgb[1]) ** 2 + (b - fam.rgb[2]) ** 2;
+    if (d < bestDist) { bestDist = d; bestKey = fam.key; }
+  }
+  return bestKey;
+}
+
+// Items whose colour set contains at least one of the requested families.
+function matchByColor(pool: Prenda[], keys: string[]): Prenda[] {
+  if (keys.length === 0) return [];
+  return pool.filter(it => it.colors.some(c => keys.includes(classifyColor(c))));
+}
+
+// Resolve a pool to a colour-prioritised, NEVER-empty subset by walking ordered
+// preference tiers, then neutral pieces, then the full pool. When no colour
+// filter applies to the slot, the pool is returned untouched.
+function colorPriorityPool(pool: Prenda[], tiers: string[][]): Prenda[] {
+  if (pool.length === 0) return pool;
+  const active = tiers.filter(t => t.length > 0);
+  if (active.length === 0) return pool;
+  for (const tier of active) {
+    const m = matchByColor(pool, tier);
+    if (m.length > 0) return m;
+  }
+  const neutral = matchByColor(pool, NEUTRAL_KEYS);
+  return neutral.length > 0 ? neutral : pool;
+}
+
 export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
   const [selectedClima,     setSelectedClima]     = useState<Prenda['clima']>(getDefaultClima());
   const [selectedFormality, setSelectedFormality] = useState<Prenda['formality']>('casual');
   const [selectedStyle,     setSelectedStyle]     = useState<string>('todos');
+  const [primaryColors,     setPrimaryColors]     = useState<string[]>([]);
+  const [secondaryColors,   setSecondaryColors]   = useState<string[]>([]);
 
   const [generatedOutfit, setGeneratedOutfit] = useState<OutfitState | null>(null);
   const [isGenerating,    setIsGenerating]    = useState(false);
@@ -65,10 +144,28 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
     return neutral.length > 0 ? neutral : catItems;
   };
 
+  const togglePrimary = (key: string) =>
+    setPrimaryColors(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+  const toggleSecondary = (key: string) =>
+    setSecondaryColors(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+
+  // Per-slot colour preference tiers (ordered). Base garments lead with the
+  // primary palette; calzado leads with the secondary palette (accent) and then
+  // harmonises back to the primaries. Every slot still falls back gracefully.
+  const colorTiersFor = (category: keyof OutfitState): string[][] => {
+    if (category === 'calzado') return [secondaryColors, primaryColors];
+    return [primaryColors, secondaryColors]; // superior, inferior, abrigo
+  };
+
+  // Full per-category triage: STYLE first, then CHROMATIC, each with silent
+  // fallback. Never returns empty when the input pool is non-empty.
+  const slotPool = (category: keyof OutfitState, catItems: Prenda[]): Prenda[] =>
+    colorPriorityPool(stylePriorityPool(catItems), colorTiersFor(category));
+
   // Clear stale error whenever the user adjusts any filter
   useEffect(() => {
     setErrorMsg(null);
-  }, [selectedClima, selectedFormality, selectedStyle]);
+  }, [selectedClima, selectedFormality, selectedStyle, primaryColors, secondaryColors]);
 
   // Cleanup pending timers on unmount to prevent memory leaks on mobile
   useEffect(() => {
@@ -158,17 +255,17 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       // COMPOSE — all gates passed, build the outfit
       // ════════════════════════════════════════════════════════════════════════════
       const outfit: OutfitState = {
-        superior: rand(stylePriorityPool(byCat.superior)),
-        inferior: rand(stylePriorityPool(byCat.inferior)),
-        calzado:  rand(stylePriorityPool(byCat.calzado)),
+        superior: rand(slotPool('superior', byCat.superior)),
+        inferior: rand(slotPool('inferior', byCat.inferior)),
+        calzado:  rand(slotPool('calzado',  byCat.calzado)),
       };
 
       // Abrigo: mandatory for frío (gated above), optional for templado/calor
       if (byCat.abrigo.length > 0) {
         if (selectedClima === 'frio') {
-          outfit.abrigo = rand(stylePriorityPool(byCat.abrigo));
+          outfit.abrigo = rand(slotPool('abrigo', byCat.abrigo));
         } else if (selectedClima === 'templado' && Math.random() > 0.4) {
-          outfit.abrigo = rand(stylePriorityPool(byCat.abrigo));
+          outfit.abrigo = rand(slotPool('abrigo', byCat.abrigo));
         }
       }
 
@@ -189,8 +286,8 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         item.formality === selectedFormality
     );
 
-    // Same style-priority triage as generation, with graceful neutral fallback.
-    const pool = stylePriorityPool(catPool);
+    // Same style + chromatic triage as generation, with graceful fallbacks.
+    const pool = slotPool(category, catPool);
 
     const currentId  = generatedOutfit[category]?.id;
     const cleanPool  = pool.filter(i => i.id !== currentId);
@@ -289,6 +386,17 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
             </select>
           </div>
         )}
+
+        {/* ── Chromatic filters (multi-select swatches) ─────────────────── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Colores Principales</label>
+          <ColorSwatchRow selected={primaryColors} onToggle={togglePrimary} />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
+          <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Colores Secundarios</label>
+          <ColorSwatchRow selected={secondaryColors} onToggle={toggleSecondary} />
+        </div>
 
         <button className="btn btn-primary" onClick={handleGenerate} disabled={isGenerating}>
           <RefreshCw className={isGenerating ? 'animate-spin' : ''} size={18} />
@@ -491,6 +599,57 @@ function OutfitItemCard({ label, item, onShuffle, isSmall }: OutfitItemCardProps
       >
         <RefreshCw size={13} />
       </button>
+    </div>
+  );
+}
+
+// ── Child component: Color Swatch Row (multi-select) ──────────────────────────
+
+interface ColorSwatchRowProps {
+  selected: string[];
+  onToggle: (key: string) => void;
+}
+
+function ColorSwatchRow({ selected, onToggle }: ColorSwatchRowProps) {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+      {COLOR_FAMILIES.map(fam => {
+        const active = selected.includes(fam.key);
+        return (
+          <button
+            key={fam.key}
+            type="button"
+            onClick={() => onToggle(fam.key)}
+            title={fam.name}
+            aria-label={fam.name}
+            aria-pressed={active}
+            style={{
+              width: '26px',
+              height: '26px',
+              borderRadius: '50%',
+              backgroundColor: fam.hex,
+              border: fam.light ? '1px solid var(--panel-border)' : 'none',
+              boxShadow: active
+                ? '0 0 0 2px var(--bg-color), 0 0 0 4px var(--accent-color)'
+                : '0 1px 3px rgba(0,0,0,0.15)',
+              transform: active ? 'scale(1.12)' : 'scale(1)',
+              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              cursor: 'pointer',
+              position: 'relative',
+              flexShrink: 0,
+              padding: 0,
+            }}
+          >
+            {active && (
+              <Check
+                size={14}
+                color={fam.light ? '#1A1A1A' : '#FFFFFF'}
+                style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
+              />
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
