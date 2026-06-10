@@ -1,14 +1,9 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { Prenda } from '../types';
 
-// NOTE: VITE_ vars are embedded in the client bundle at build time.
-// Configure VITE_GEMINI_API_KEY in .env.local for local dev and in the
-// Vercel dashboard (Settings → Environment Variables) for production.
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }) : null;
-
-export const isStylistConfigured = Boolean(model);
+// isStylistConfigured: evaluated at module load — tells the UI whether to show
+// the chat panel. VITE_ vars are statically replaced by Vite at build time.
+export const isStylistConfigured = Boolean(import.meta.env.VITE_GEMINI_API_KEY);
 
 export interface ChatMessage {
   role: 'user' | 'stylist';
@@ -48,7 +43,9 @@ const SYSTEM_ROLE =
 
 /**
  * Sends a contextual styling request to Gemini and returns the raw reply.
- * Throws when the model isn't configured or the request fails.
+ * The SDK is instantiated dynamically on each call so the env var is read
+ * fresh — useful when diagnosing whether Vite injected it at build time.
+ * Throws on missing key or API errors (caught and displayed by StylistChat).
  */
 export async function askStylist(
   userMessage: string,
@@ -56,9 +53,18 @@ export async function askStylist(
   activeOutfit: Record<string, Prenda | undefined>,
   filters: string,
 ): Promise<string> {
-  if (!model) {
-    throw new Error('El estilista no está configurado: falta VITE_GEMINI_API_KEY.');
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+  // Diagnostic: logs TRUE if Vite injected the key, FALSE if not.
+  // Check Chrome DevTools → Console after a send to audit production.
+  console.log('[Gemini Link]', !!apiKey);
+
+  if (!apiKey) {
+    throw new Error('VITE_GEMINI_API_KEY no está disponible en este build. Configurala en Vercel → Settings → Environment Variables y redesplegá.');
   }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
   const prompt = [
     SYSTEM_ROLE,

@@ -855,10 +855,12 @@ function StylistChat({ wardrobe, activeOutfit, filters, onApplyPick }: StylistCh
       });
       const clean = reply.replace(/\[PRENDA:[^\]]+\]/g, '').replace(/[ \t]{2,}/g, ' ').trim();
       setMessages(prev => [...prev, { role: 'stylist', text: clean || '¡Listo! Te actualicé el look. ✨' }]);
-    } catch {
+    } catch (error) {
+      console.error('[Gemini Error Debug]:', error);
+      const errMsg = error instanceof Error ? error.message : String(error);
       setMessages(prev => [
         ...prev,
-        { role: 'stylist', text: 'Uy, no pude conectar con la estilista 😅 Revisá la API key o tu señal e intentá de nuevo.' },
+        { role: 'stylist', text: `Error al conectar con la estilista 😅\n${errMsg}` },
       ]);
     } finally {
       setLoading(false);
