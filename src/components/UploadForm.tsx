@@ -3,7 +3,7 @@ import type { ChangeEvent, FormEvent } from 'react';
 import { Camera, Image as ImageIcon, Check, Loader2, Sparkles, AlertCircle, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { insertPrenda, uploadPrendaImage } from '../lib/db';
-import { compressImage, isAllowedImageType } from '../utils/image';
+import { compressImage, isAllowedImageType, removeFlatBackground } from '../utils/image';
 import type { Prenda } from '../types';
 
 interface UploadFormProps {
@@ -156,20 +156,25 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     setErrorMsg(null);
 
     try {
-      // Step 1 — Canvas compression (900×900 max, JPEG 0.75)
+      // Step 1 — Compress (JPEG baseline) and attempt an automatic transparent
+      // cut-out for photos on a flat/light background (basic chroma keying).
+      // The transparent PNG is preferred when it fits the size budget so the
+      // garment "dresses" the mannequin without a background box.
       const compressed = await compressImage(selectedImage);
+      const cutout = await removeFlatBackground(selectedImage);
+      const processed = cutout && cutout.size <= MAX_COMPRESSED_BYTES ? cutout : compressed;
 
-      // Step 2 — Post-compression size gate
-      if (compressed.size > MAX_COMPRESSED_BYTES) {
+      // Step 2 — Post-processing size gate
+      if (processed.size > MAX_COMPRESSED_BYTES) {
         setErrorMsg(
-          `La imagen comprimida pesa ${Math.round(compressed.size / 1024)} KB ` +
+          `La imagen procesada pesa ${Math.round(processed.size / 1024)} KB ` +
           `y supera el límite de 150 KB. Probá con una foto con menos detalle o mejor iluminación.`
         );
         return;
       }
 
       // Step 3 — Upload to Supabase Storage or encode to Base64 for LocalStorage
-      const imageUrl = await uploadPrendaImage(compressed);
+      const imageUrl = await uploadPrendaImage(processed);
 
       // Step 4 — Persist garment metadata. `colors` is the deduped union of both
       // palettes so the generator's chromatic triage can read one flat list.

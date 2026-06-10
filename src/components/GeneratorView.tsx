@@ -331,15 +331,18 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         (category === 'accesorios' || category === 'carteras' || item.clima === selectedClima)
     );
 
-    // Same style + chromatic triage as generation, with graceful fallbacks.
-    const pool = slotPool(category, catPool);
+    const currentId = generatedOutfit[category]?.id;
 
-    const currentId  = generatedOutfit[category]?.id;
-    const cleanPool  = pool.filter(i => i.id !== currentId);
-    const finalPool  = cleanPool.length > 0 ? cleanPool : pool;
+    // Prefer a DIFFERENT garment matching the active style + colour triage…
+    const triaged = slotPool(category, catPool).filter(i => i.id !== currentId);
+    // …otherwise relax to any other garment of this category for the active
+    // clima/ocasión, so the slot always refreshes when an alternative exists
+    // (and only stays put when this is the single matching piece).
+    const relaxed = catPool.filter(i => i.id !== currentId);
+    const pool = triaged.length > 0 ? triaged : relaxed;
 
-    if (finalPool.length > 0) {
-      const newItem = finalPool[Math.floor(Math.random() * finalPool.length)];
+    if (pool.length > 0) {
+      const newItem = pool[Math.floor(Math.random() * pool.length)];
       setGeneratedOutfit(prev => ({ ...prev, [category]: newItem }));
     }
   };
@@ -493,6 +496,10 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
                   const item = generatedOutfit[slot];
                   if (!item) return null;
                   const p = MANNEQUIN_MAP[slot];
+                  // Cutout PNGs already have a transparent background → render as-is.
+                  // Photos with a background use multiply + aggressive contrast to
+                  // "dissolve" light/white backgrounds onto the mannequin.
+                  const isCutout = /\.png($|\?)/i.test(item.image_url) || item.image_url.startsWith('data:image/png');
                   return (
                     <img
                       key={slot}
@@ -503,11 +510,15 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
                         top: p.top,
                         left: p.left,
                         width: p.width,
+                        height: p.height,
+                        objectFit: p.height ? 'cover' : undefined,
                         transform: 'translateX(-50%)',
                         zIndex: p.zIndex,
                         borderRadius: '12px',
-                        mixBlendMode: 'multiply',
-                        filter: 'drop-shadow(0 6px 14px rgba(0,0,0,0.14))',
+                        mixBlendMode: isCutout ? 'normal' : 'multiply',
+                        filter: isCutout
+                          ? 'drop-shadow(0 6px 14px rgba(0,0,0,0.18))'
+                          : 'contrast(1.06) saturate(1.04) drop-shadow(0 6px 14px rgba(0,0,0,0.14))',
                         transition: 'opacity 0.3s ease',
                       }}
                     />

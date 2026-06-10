@@ -14,6 +14,7 @@ export interface MannequinPlacement {
   top: string;     // % from the top of the container
   left: string;    // % horizontal center anchor
   width: string;   // % of container width
+  height?: string; // % vertical span; when set the image uses object-fit: cover
   zIndex: number;  // strict stacking order
   label: string;   // human label (alt text / shuffle control)
 }
@@ -21,7 +22,7 @@ export interface MannequinPlacement {
 export const MANNEQUIN_MAP: Record<Prenda['category'], MannequinPlacement> = {
   inferior:   { top: '50%', left: '50%', width: '40%', zIndex: 10, label: 'Inferior' },
   superior:   { top: '19%', left: '50%', width: '40%', zIndex: 20, label: 'Superior' },
-  full_body:  { top: '19%', left: '50%', width: '46%', zIndex: 25, label: 'Prenda Entera' },
+  full_body:  { top: '19%', left: '50%', width: '46%', height: '54%', zIndex: 25, label: 'Prenda Entera' },
   abrigo:     { top: '18%', left: '50%', width: '52%', zIndex: 30, label: 'Abrigo' },
   calzado:    { top: '85%', left: '50%', width: '30%', zIndex: 35, label: 'Calzado' },
   accesorios: { top: '2%',  left: '50%', width: '24%', zIndex: 40, label: 'Accesorio' },
