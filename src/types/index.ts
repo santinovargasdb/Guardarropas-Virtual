@@ -1,8 +1,10 @@
+export type Clima = 'calor' | 'frio' | 'templado';
+
 export interface Prenda {
   id: string;
   image_url: string;
   category: 'superior' | 'inferior' | 'abrigo' | 'calzado' | 'full_body' | 'accesorios' | 'carteras';
-  clima: 'calor' | 'frio' | 'templado';
+  clima: Clima[];
   formality: 'formal' | 'casual' | 'deportivo';
   styles: string[];
   colors: string[];            // combined union (primary ∪ secondary) — matching & display

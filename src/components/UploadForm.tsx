@@ -3,8 +3,8 @@ import type { ChangeEvent, FormEvent } from 'react';
 import { Camera, Image as ImageIcon, Check, Loader2, Sparkles, AlertCircle, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { insertPrenda, uploadPrendaImage } from '../lib/db';
-import { compressImage, isAllowedImageType, removeFlatBackground } from '../utils/image';
-import type { Prenda } from '../types';
+import { compressImage, isAllowedImageType, removeFlatBackground, previewFlatBackground } from '../utils/image';
+import type { Prenda, Clima } from '../types';
 
 interface UploadFormProps {
   onSuccess: () => void;
@@ -25,7 +25,7 @@ const CATEGORIES: { value: Prenda['category']; label: string; hint: string; icon
   { value: 'carteras',   label: 'Carteras',   hint: 'Carteras, Bolsos, Mochilas',   icon: ShoppingBag },
 ];
 
-const CLIMAS: { value: Prenda['clima']; label: string }[] = [
+const CLIMAS: { value: Clima; label: string }[] = [
   { value: 'calor',    label: '☀️ Calor' },
   { value: 'templado', label: '⛅ Templado' },
   { value: 'frio',     label: '❄️ Frío' },
@@ -62,7 +62,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   const [selectedImage,  setSelectedImage]  = useState<File | null>(null);
   const [previewUrl,     setPreviewUrl]     = useState<string | null>(null);
   const [category,       setCategory]       = useState<Prenda['category']>('superior');
-  const [clima,          setClima]          = useState<Prenda['clima']>('templado');
+  const [clima,          setClima]          = useState<Clima[]>(['templado']);
   const [formality,      setFormality]      = useState<Prenda['formality']>('casual');
   const [primaryColors,   setPrimaryColors]   = useState<string[]>([]);
   const [secondaryColors, setSecondaryColors] = useState<string[]>([]);
@@ -71,6 +71,9 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   const [isUploading,    setIsUploading]    = useState(false);
   const [uploadSuccess,  setUploadSuccess]  = useState(false);
   const [errorMsg,       setErrorMsg]       = useState<string | null>(null);
+  const [removeBg,       setRemoveBg]       = useState(true);
+  const [bgThreshold,    setBgThreshold]    = useState(38);
+  const [cutoutPreview,  setCutoutPreview]  = useState<string | null>(null);
 
   const fileInputRef      = useRef<HTMLInputElement>(null);
   const cameraInputRef    = useRef<HTMLInputElement>(null);
@@ -83,14 +86,28 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     };
   }, []);
 
+  // Live cut-out preview for the background-remover assistant (forced so the user
+  // can tune the threshold and judge any background, not only flat/light ones).
+  useEffect(() => {
+    if (!selectedImage || !removeBg) { setCutoutPreview(null); return; }
+    let cancelled = false;
+    previewFlatBackground(selectedImage, bgThreshold, true).then(url => {
+      if (!cancelled) setCutoutPreview(url);
+    });
+    return () => { cancelled = true; };
+  }, [selectedImage, removeBg, bgThreshold]);
+
   // ── Helpers ──────────────────────────────────────────────────────────────────
 
   const resetForm = () => {
     setSelectedImage(null);
     setPreviewUrl(null);
     setCategory('superior');
-    setClima('templado');
+    setClima(['templado']);
     setFormality('casual');
+    setRemoveBg(true);
+    setBgThreshold(38);
+    setCutoutPreview(null);
     setPrimaryColors([]);
     setSecondaryColors([]);
     setSelectedStyles([]);
@@ -124,6 +141,9 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     setErrorMsg(null);
   };
 
+  const toggleClima = (value: Clima) =>
+    setClima(prev => prev.includes(value) ? prev.filter(c => c !== value) : [...prev, value]);
+
   const togglePrimaryColor = (hex: string) =>
     setPrimaryColors(prev => prev.includes(hex) ? prev.filter(c => c !== hex) : [...prev, hex]);
 
@@ -156,13 +176,16 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
     setErrorMsg(null);
 
     try {
-      // Step 1 — Compress (JPEG baseline) and attempt an automatic transparent
-      // cut-out for photos on a flat/light background (basic chroma keying).
-      // The transparent PNG is preferred when it fits the size budget so the
-      // garment "dresses" the mannequin without a background box.
+      // Step 1 — Compress (JPEG baseline). When the background remover is enabled,
+      // produce a forced transparent PNG cut-out at the chosen sensitivity so the
+      // garment "dresses" the mannequin without its background box. Falls back to
+      // the JPEG if the cut-out fails or exceeds the size budget.
       const compressed = await compressImage(selectedImage);
-      const cutout = await removeFlatBackground(selectedImage);
-      const processed = cutout && cutout.size <= MAX_COMPRESSED_BYTES ? cutout : compressed;
+      let processed: File = compressed;
+      if (removeBg) {
+        const cutout = await removeFlatBackground(selectedImage, 700, bgThreshold, true);
+        if (cutout && cutout.size <= MAX_COMPRESSED_BYTES) processed = cutout;
+      }
 
       // Step 2 — Post-processing size gate
       if (processed.size > MAX_COMPRESSED_BYTES) {
@@ -281,6 +304,74 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
         </div>
       )}
 
+      {/* ── Background remover assistant (chroma key + live preview) ── */}
+      {previewUrl && (
+        <div
+          style={{
+            border: '1px solid var(--panel-border)',
+            borderRadius: 'var(--radius-md)',
+            padding: '12px 14px',
+            marginBottom: '20px',
+            backgroundColor: 'var(--bg-color)',
+          }}
+        >
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <input type="checkbox" checked={removeBg} onChange={(e) => setRemoveBg(e.target.checked)} />
+            ✂️ Quitar fondo (PNG transparente)
+          </label>
+
+          {removeBg && (
+            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                  Sensibilidad
+                </span>
+                <input
+                  type="range"
+                  min={12}
+                  max={90}
+                  value={bgThreshold}
+                  onChange={(e) => setBgThreshold(Number(e.target.value))}
+                  style={{ flex: 1, accentColor: 'var(--accent-color)' }}
+                />
+              </div>
+
+              {/* Live preview over a checkerboard so transparency is visible */}
+              <div
+                style={{
+                  alignSelf: 'center',
+                  width: '60%',
+                  aspectRatio: '1 / 1',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--panel-border)',
+                  backgroundColor: '#ffffff',
+                  backgroundImage:
+                    'linear-gradient(45deg, #e9e3db 25%, transparent 25%), linear-gradient(-45deg, #e9e3db 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e9e3db 75%), linear-gradient(-45deg, transparent 75%, #e9e3db 75%)',
+                  backgroundSize: '16px 16px',
+                  backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                }}
+              >
+                {cutoutPreview ? (
+                  <img src={cutoutPreview} alt="Vista previa recortada" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                ) : (
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', textAlign: 'center', padding: '0 10px', opacity: 0.8 }}>
+                    Procesando recorte…
+                  </span>
+                )}
+              </div>
+
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.8, lineHeight: '1.4', margin: 0 }}>
+                Funciona mejor con fondos lisos y claros. Ajustá la sensibilidad y previsualizá; si no te convence, desactivá el recorte.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Form fields (locked during upload) ─────────────────────────── */}
       <div
         style={{
@@ -314,16 +405,16 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           </div>
         </div>
 
-        {/* Clima — single-select chips */}
+        {/* Clima — multi-select chips (uno, dos o los tres) */}
         <div className="form-group">
-          <label className="form-label">Clima</label>
+          <label className="form-label">Clima (uno o varios)</label>
           <div className="chip-container">
             {CLIMAS.map(item => (
               <button
                 key={item.value}
                 type="button"
-                className={`chip ${clima === item.value ? 'selected' : ''}`}
-                onClick={() => setClima(item.value)}
+                className={`chip ${clima.includes(item.value) ? 'selected' : ''}`}
+                onClick={() => toggleClima(item.value)}
               >
                 {item.label}
               </button>

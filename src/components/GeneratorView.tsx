@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { RefreshCw, Heart, AlertCircle, Sparkles, Check, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { Prenda } from '../types';
+import type { Prenda, Clima } from '../types';
 import { insertOutfitFavorito } from '../lib/db';
 import { MANNEQUIN_MAP, LAYER_ORDER } from '../lib/maniqui';
 import mannequinSrc from '../assets/modelos/mannequin.svg';
@@ -34,7 +34,7 @@ const SHUFFLE_SLOTS: { slot: Prenda['category']; label: string; icon: LucideIcon
 
 // Preselect climate based on Argentine Southern Hemisphere seasons.
 // Jan(0)–Feb(1) and Dec(11) → summer · Jun(5)–Aug(7) → winter · otherwise templado
-function getDefaultClima(): Prenda['clima'] {
+function getDefaultClima(): Clima {
   const m = new Date().getMonth();
   if (m === 11 || m <= 1) return 'calor';
   if (m >= 5  && m <= 7)  return 'frio';
@@ -119,7 +119,7 @@ function colorPriorityPool(pool: Prenda[], tiers: string[][]): Prenda[] {
 }
 
 export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
-  const [selectedClima,     setSelectedClima]     = useState<Prenda['clima']>(getDefaultClima());
+  const [selectedClima,     setSelectedClima]     = useState<Clima>(getDefaultClima());
   const [selectedFormality, setSelectedFormality] = useState<Prenda['formality']>('casual');
   const [selectedStyle,     setSelectedStyle]     = useState<string>('todos');
   const [primaryColors,     setPrimaryColors]     = useState<string[]>([]);
@@ -211,7 +211,7 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       // per-category below (stylePriorityPool) so a strict style can never empty
       // an entire category and break the outfit (e.g. 'Boliche' with no calzado).
       const basePool = items.filter(
-        item => item.clima === selectedClima && item.formality === selectedFormality
+        item => item.clima.includes(selectedClima) && item.formality === selectedFormality
       );
 
       // ── Group the base pool by category ──────────────────────────────────────────
@@ -328,7 +328,7 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         item.category === category &&
         item.formality === selectedFormality &&
         // Accessories & bags ignore clima (not weather-dependent).
-        (category === 'accesorios' || category === 'carteras' || item.clima === selectedClima)
+        (category === 'accesorios' || category === 'carteras' || item.clima.includes(selectedClima))
     );
 
     const currentId = generatedOutfit[category]?.id;
@@ -401,7 +401,7 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
             <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Clima</label>
             <select
               value={selectedClima}
-              onChange={(e) => setSelectedClima(e.target.value as Prenda['clima'])}
+              onChange={(e) => setSelectedClima(e.target.value as Clima)}
               style={{ padding: '10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.85rem', outline: 'none' }}
             >
               <option value="calor">☀️ Calor</option>

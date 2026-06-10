@@ -134,12 +134,15 @@ export function ClosetView({ items, onRefresh }: ClosetViewProps) {
                 <span className="prenda-category">{CATEGORY_LABEL[item.category]}</span>
 
                 <div className="prenda-tags">
-                  <span
-                    className="tag-badge"
-                    style={{ backgroundColor: 'rgba(212, 163, 115, 0.1)', color: 'var(--accent-color)' }}
-                  >
-                    {item.clima}
-                  </span>
+                  {item.clima.map(c => (
+                    <span
+                      key={c}
+                      className="tag-badge"
+                      style={{ backgroundColor: 'rgba(212, 163, 115, 0.1)', color: 'var(--accent-color)' }}
+                    >
+                      {c}
+                    </span>
+                  ))}
                   <span className="tag-badge">{item.formality}</span>
                   {item.styles.slice(0, 2).map(s => (
                     <span key={s} className="tag-badge" style={{ fontStyle: 'italic' }}>#{s}</span>

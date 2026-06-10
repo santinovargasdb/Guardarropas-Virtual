@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase';
-import type { Prenda, OutfitFavorito } from '../types';
+import type { Prenda, OutfitFavorito, Clima } from '../types';
 
 // Increment when the Prenda interface OR the demo dataset changes to force a
 // LocalStorage migration + one-time demo refresh.
@@ -7,7 +7,8 @@ import type { Prenda, OutfitFavorito } from '../types';
 // v5: primary/secondary colour roles + colour-rich demo data.
 // v6: new categories full_body (vestidos/monos) & accesorios (joyas/bolsos).
 // v7: new category carteras (bolsos) + one example item per category.
-const SCHEMA_VERSION = 'v7';
+// v8: clima migrated from single string to multi-value array (Clima[]).
+const SCHEMA_VERSION = 'v8';
 const LS_SCHEMA_KEY  = 'wardrobe_schema_version';
 
 // One-time demo-seeding marker. Stores the SCHEMA_VERSION it ran under, so a
@@ -26,12 +27,23 @@ function toCategory(v: unknown): Prenda['category'] {
   return 'superior';
 }
 
-function toClima(v: unknown): Prenda['clima'] {
-  const raw = Array.isArray(v) ? v[0] : v;   // accept old array 'weather' field
-  if (raw === 'calor'    || raw === 'frio' || raw === 'templado') return raw;
-  if (raw === 'calido')   return 'calor';      // rename: calido → calor
-  if (raw === 'lluvioso') return 'templado';   // merge: lluvioso → templado
-  return 'templado';
+function toClimaOne(v: unknown): Clima | null {
+  if (v === 'calor' || v === 'frio' || v === 'templado') return v;
+  if (v === 'calido')   return 'calor';      // legacy rename: calido → calor
+  if (v === 'lluvioso') return 'templado';   // legacy merge: lluvioso → templado
+  return null;
+}
+
+// clima is now multi-value. Accepts a single legacy string, a legacy `weather`
+// array, or a current array — always returns a deduped, non-empty Clima[].
+function toClimaArray(v: unknown): Clima[] {
+  const raw = Array.isArray(v) ? v : [v];
+  const out: Clima[] = [];
+  for (const x of raw) {
+    const c = toClimaOne(x);
+    if (c && !out.includes(c)) out.push(c);
+  }
+  return out.length > 0 ? out : ['templado'];
 }
 
 function toFormality(v: unknown): Prenda['formality'] {
@@ -61,7 +73,7 @@ function normalizePrenda(raw: unknown): Prenda {
     id:        String(r.id ?? ''),
     image_url: String(r.image_url ?? ''),
     category:  toCategory(r.category),
-    clima:     toClima(r.clima ?? r.weather),   // accept both field names
+    clima:     toClimaArray(r.clima ?? r.weather),   // accept legacy string/array
     formality: toFormality(r.formality),
     styles:    toStringArray(r.styles),
     colors,
@@ -82,7 +94,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-1',
     image_url: 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=600&auto=format&fit=crop&q=70',
     category: 'superior',
-    clima: 'templado',
+    clima: ['frio', 'templado', 'calor'],
     formality: 'casual',
     styles: ['Soft', 'Cute core'],
     colors: ['#FFFFFF', '#FFC0CB'],
@@ -96,7 +108,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-2',
     image_url: 'https://images.unsplash.com/photo-1574164904299-3a102b110380?w=600&auto=format&fit=crop&q=70',
     category: 'superior',
-    clima: 'frio',
+    clima: ['frio', 'templado'],
     formality: 'casual',
     styles: ['Chill', 'Soft'],
     colors: ['#D7C0AE', '#704214'],
@@ -110,7 +122,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-3',
     image_url: 'https://images.unsplash.com/photo-1541099649105-f69ad21f3246?w=600&auto=format&fit=crop&q=70',
     category: 'inferior',
-    clima: 'frio',
+    clima: ['frio', 'templado'],
     formality: 'casual',
     styles: ['Chill', 'Boliche'],
     colors: ['#3E54AC', '#FFFFFF'],
@@ -124,7 +136,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-4',
     image_url: 'https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?w=600&auto=format&fit=crop&q=70',
     category: 'inferior',
-    clima: 'calor',
+    clima: ['templado', 'calor'],
     formality: 'casual',
     styles: ['Soft', 'Cute core'],
     colors: ['#F5EBE0', '#E1AD01'],
@@ -138,7 +150,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-5',
     image_url: 'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=600&auto=format&fit=crop&q=70',
     category: 'abrigo',
-    clima: 'frio',
+    clima: ['frio'],
     formality: 'formal',
     styles: ['Gotico', 'Jirai'],
     colors: ['#A084CF', '#1A1A1A'],
@@ -152,7 +164,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-6',
     image_url: 'https://images.unsplash.com/photo-1611312449412-6cefac5dc3e4?w=600&auto=format&fit=crop&q=70',
     category: 'abrigo',
-    clima: 'templado',
+    clima: ['frio', 'templado'],
     formality: 'casual',
     styles: ['Chill', 'Boliche'],
     colors: ['#4E6C50', '#1A1A1A'],
@@ -166,7 +178,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-7',
     image_url: 'https://images.unsplash.com/photo-1549298916-b41d501d3772?w=600&auto=format&fit=crop&q=70',
     category: 'calzado',
-    clima: 'templado',
+    clima: ['frio', 'templado', 'calor'],
     formality: 'casual',
     styles: ['Chill', 'Soft'],
     colors: ['#FFFFFF', '#8E918F'],
@@ -180,7 +192,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-8',
     image_url: 'https://images.unsplash.com/photo-1520639888713-7851133b1ed0?w=600&auto=format&fit=crop&q=70',
     category: 'calzado',
-    clima: 'frio',
+    clima: ['frio', 'templado'],
     formality: 'formal',
     styles: ['Gotico', 'Boliche'],
     colors: ['#1A1A1A', '#8E918F'],
@@ -194,7 +206,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-9',
     image_url: 'https://images.unsplash.com/photo-1434389677669-e08b4cac3105?w=600&auto=format&fit=crop&q=70',
     category: 'superior',
-    clima: 'calor',
+    clima: ['templado', 'calor'],
     formality: 'formal',
     styles: ['Boliche', 'Cute core'],
     colors: ['#2F4F4F', '#FFFFFF'],
@@ -208,7 +220,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-10',
     image_url: 'https://images.unsplash.com/photo-1506629082955-511b1aa562c8?w=600&auto=format&fit=crop&q=70',
     category: 'inferior',
-    clima: 'templado',
+    clima: ['frio', 'templado', 'calor'],
     formality: 'deportivo',
     styles: ['Chill', 'Jirai'],
     colors: ['#8D4B32', '#1A1A1A'],
@@ -222,7 +234,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-11',
     image_url: 'https://images.unsplash.com/photo-1485968579580-b6d095142e6e?w=600&auto=format&fit=crop&q=70',
     category: 'full_body',
-    clima: 'templado',
+    clima: ['templado', 'calor'],
     formality: 'casual',
     styles: ['Chill', 'Cute core'],
     colors: ['#FFFFFF', '#EAD9C0'],
@@ -236,7 +248,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-12',
     image_url: 'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?w=600&auto=format&fit=crop&q=70',
     category: 'accesorios',
-    clima: 'templado',
+    clima: ['frio', 'templado', 'calor'],
     formality: 'casual',
     styles: ['Soft', 'Jirai'],
     colors: ['#E1AD01', '#F5EBE0'],
@@ -250,7 +262,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-13',
     image_url: 'https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=600&auto=format&fit=crop&q=70',
     category: 'carteras',
-    clima: 'templado',
+    clima: ['frio', 'templado', 'calor'],
     formality: 'casual',
     styles: ['Chill', 'Boliche'],
     colors: ['#704214', '#1A1A1A'],
@@ -264,7 +276,7 @@ const MOCK_PRENDAS: Prenda[] = [
     id: 'mock-14',
     image_url: 'https://images.unsplash.com/photo-1577803645773-f96470509666?w=600&auto=format&fit=crop&q=70',
     category: 'accesorios',
-    clima: 'templado',
+    clima: ['templado', 'calor'],
     formality: 'casual',
     styles: ['Boliche', 'Jirai'],
     colors: ['#1A1A1A'],
