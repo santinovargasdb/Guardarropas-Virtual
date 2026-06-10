@@ -391,9 +391,14 @@ export async function getPrendas(): Promise<Prenda[]> {
   }
 
   initLocalStorage();
-  const raw = localStorage.getItem('wardrobe_prendas');
-  if (!raw) return [];
-  return (JSON.parse(raw) as unknown[]).map(normalizePrenda);
+  try {
+    const raw = localStorage.getItem('wardrobe_prendas');
+    if (!raw) return [];
+    return (JSON.parse(raw) as unknown[]).map(normalizePrenda);
+  } catch {
+    localStorage.removeItem('wardrobe_prendas');
+    return [];
+  }
 }
 
 export async function insertPrenda(prenda: Omit<Prenda, 'id' | 'created_at'>): Promise<Prenda> {
@@ -438,10 +443,14 @@ export async function deletePrenda(id: string): Promise<void> {
   }
 
   initLocalStorage();
-  const raw = localStorage.getItem('wardrobe_prendas');
-  if (!raw) return;
-  const list = (JSON.parse(raw) as unknown[]).map(normalizePrenda).filter(item => item.id !== id);
-  localStorage.setItem('wardrobe_prendas', JSON.stringify(list));
+  try {
+    const raw = localStorage.getItem('wardrobe_prendas');
+    if (!raw) return;
+    const list = (JSON.parse(raw) as unknown[]).map(normalizePrenda).filter(item => item.id !== id);
+    localStorage.setItem('wardrobe_prendas', JSON.stringify(list));
+  } catch {
+    // corrupted LS — leave intact rather than deleting user data
+  }
 }
 
 // ── OUTFITS FAVORITOS ────────────────────────────────────────────────────────
@@ -460,8 +469,13 @@ export async function getOutfitsFavoritos(): Promise<OutfitFavorito[]> {
     }
   }
 
-  const raw = localStorage.getItem('wardrobe_favorites');
-  return raw ? (JSON.parse(raw) as OutfitFavorito[]) : [];
+  try {
+    const raw = localStorage.getItem('wardrobe_favorites');
+    return raw ? (JSON.parse(raw) as OutfitFavorito[]) : [];
+  } catch {
+    localStorage.removeItem('wardrobe_favorites');
+    return [];
+  }
 }
 
 export async function insertOutfitFavorito(items: string[], name?: string): Promise<OutfitFavorito> {
@@ -502,10 +516,14 @@ export async function deleteOutfitFavorito(id: string): Promise<void> {
     }
   }
 
-  const raw = localStorage.getItem('wardrobe_favorites');
-  if (!raw) return;
-  const list = (JSON.parse(raw) as OutfitFavorito[]).filter(item => item.id !== id);
-  localStorage.setItem('wardrobe_favorites', JSON.stringify(list));
+  try {
+    const raw = localStorage.getItem('wardrobe_favorites');
+    if (!raw) return;
+    const list = (JSON.parse(raw) as OutfitFavorito[]).filter(item => item.id !== id);
+    localStorage.setItem('wardrobe_favorites', JSON.stringify(list));
+  } catch {
+    // corrupted LS — leave intact
+  }
 }
 
 // ── IMAGE UPLOAD ─────────────────────────────────────────────────────────────
