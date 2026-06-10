@@ -1,7 +1,10 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { RefreshCw, Heart, AlertCircle, Sparkles, Check } from 'lucide-react';
+import { RefreshCw, Heart, AlertCircle, Sparkles, Check, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { Prenda } from '../types';
 import { insertOutfitFavorito } from '../lib/db';
+import { MANNEQUIN_MAP, LAYER_ORDER } from '../lib/maniqui';
+import mannequinSrc from '../assets/modelos/mannequin.svg';
 
 interface GeneratorViewProps {
   items: Prenda[];
@@ -17,6 +20,17 @@ type OutfitState = {
   accesorios?: Prenda;
   carteras?:   Prenda;
 };
+
+// Side shuffle controls — one icon button per garment slot (filtered by presence).
+const SHUFFLE_SLOTS: { slot: Prenda['category']; label: string; icon: LucideIcon }[] = [
+  { slot: 'accesorios', label: 'Accesorio',       icon: Sparkles },
+  { slot: 'superior',   label: 'Prenda Superior', icon: Shirt },
+  { slot: 'full_body',  label: 'Prenda Entera',   icon: PersonStanding },
+  { slot: 'abrigo',     label: 'Abrigo',          icon: Layers },
+  { slot: 'inferior',   label: 'Prenda Inferior', icon: RectangleHorizontal },
+  { slot: 'carteras',   label: 'Cartera',         icon: ShoppingBag },
+  { slot: 'calzado',    label: 'Calzado',         icon: Footprints },
+];
 
 // Preselect climate based on Argentine Southern Hemisphere seasons.
 // Jan(0)–Feb(1) and Dec(11) → summer · Jun(5)–Aug(7) → winter · otherwise templado
@@ -452,100 +466,91 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       {/* ── Outfit canvas ────────────────────────────────────────────────── */}
       {hasOutfit && !errorMsg && (
         <div className={`fade-in${isShuffling ? ' shuffling' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <div className="glass-panel" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', position: 'relative' }}>
+          <div className="glass-panel" style={{ padding: '14px', position: 'relative' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
 
-            {/* ── FILA 1 · Cabeza: accesorio centrado arriba ── */}
-            {generatedOutfit.accesorios && (
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <div style={{ width: '50%' }}>
-                  <OutfitItemCard
-                    label="Accesorio"
-                    item={generatedOutfit.accesorios}
-                    onShuffle={() => handleShuffleItem('accesorios')}
-                  />
-                </div>
+              {/* ── Maniquí Virtual: canvas anatómico por capas ── */}
+              <div
+                style={{
+                  position: 'relative',
+                  flex: 1,
+                  aspectRatio: '300 / 640',
+                  maxWidth: '320px',
+                  margin: '0 auto',
+                  borderRadius: 'var(--radius-md)',
+                  overflow: 'hidden',
+                }}
+              >
+                {/* Base mannequin (z-index 0) */}
+                <img
+                  src={mannequinSrc}
+                  alt="Maniquí"
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', zIndex: 0 }}
+                />
+
+                {/* Garment layers in strict z-order; each "dresses" the mannequin */}
+                {LAYER_ORDER.map(slot => {
+                  const item = generatedOutfit[slot];
+                  if (!item) return null;
+                  const p = MANNEQUIN_MAP[slot];
+                  return (
+                    <img
+                      key={slot}
+                      src={item.image_url}
+                      alt={p.label}
+                      style={{
+                        position: 'absolute',
+                        top: p.top,
+                        left: p.left,
+                        width: p.width,
+                        transform: 'translateX(-50%)',
+                        zIndex: p.zIndex,
+                        borderRadius: '12px',
+                        mixBlendMode: 'multiply',
+                        filter: 'drop-shadow(0 6px 14px rgba(0,0,0,0.14))',
+                        transition: 'opacity 0.3s ease',
+                      }}
+                    />
+                  );
+                })}
               </div>
-            )}
 
-            {/* ── FILA 2-3 · Torso + Baja: grilla anatómica de 2 columnas ──
-                Ruta A: superior/inferior (izq) · abrigo/cartera (der)
-                Ruta B: full_body ocupa las 2 filas (izq) · abrigo/cartera (der) */}
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gridTemplateAreas: generatedOutfit.full_body
-                  ? '"fullbody abrigo" "fullbody cartera"'
-                  : '"superior abrigo" "inferior cartera"',
-                gap: '12px',
-                alignItems: 'stretch',
-              }}
-            >
-              {generatedOutfit.full_body ? (
-                <div style={{ gridArea: 'fullbody', display: 'flex' }}>
-                  <OutfitItemCard
-                    label="Prenda Entera"
-                    item={generatedOutfit.full_body}
-                    onShuffle={() => handleShuffleItem('full_body')}
-                    fill
-                  />
-                </div>
-              ) : (
-                <>
-                  {generatedOutfit.superior && (
-                    <div style={{ gridArea: 'superior' }}>
-                      <OutfitItemCard
-                        label="Prenda Superior"
-                        item={generatedOutfit.superior}
-                        onShuffle={() => handleShuffleItem('superior')}
-                      />
-                    </div>
-                  )}
-                  {generatedOutfit.inferior && (
-                    <div style={{ gridArea: 'inferior' }}>
-                      <OutfitItemCard
-                        label="Prenda Inferior"
-                        item={generatedOutfit.inferior}
-                        onShuffle={() => handleShuffleItem('inferior')}
-                      />
-                    </div>
-                  )}
-                </>
-              )}
-
-              {generatedOutfit.abrigo && (
-                <div style={{ gridArea: 'abrigo' }}>
-                  <OutfitItemCard
-                    label="Abrigo"
-                    item={generatedOutfit.abrigo}
-                    onShuffle={() => handleShuffleItem('abrigo')}
-                  />
-                </div>
-              )}
-
-              {generatedOutfit.carteras && (
-                <div style={{ gridArea: 'cartera' }}>
-                  <OutfitItemCard
-                    label="Cartera"
-                    item={generatedOutfit.carteras}
-                    onShuffle={() => handleShuffleItem('carteras')}
-                  />
-                </div>
-              )}
+              {/* ── Control lateral: shuffle por parte del cuerpo ── */}
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', flexShrink: 0 }}>
+                {SHUFFLE_SLOTS.filter(s => generatedOutfit[s.slot]).map(s => {
+                  const Icon = s.icon;
+                  return (
+                    <button
+                      key={s.slot}
+                      type="button"
+                      onClick={() => handleShuffleItem(s.slot)}
+                      title={`Cambiar ${s.label}`}
+                      aria-label={`Cambiar ${s.label}`}
+                      style={{
+                        width: '40px',
+                        height: '40px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '50%',
+                        border: '1px solid var(--panel-border)',
+                        backgroundColor: 'var(--bg-color)',
+                        color: 'var(--accent-color)',
+                        cursor: 'pointer',
+                        boxShadow: 'var(--shadow-sm)',
+                        transition: 'transform 0.15s ease, background-color 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-light)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-color)'; }}
+                      onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.9)'; }}
+                      onMouseUp={(e)   => { e.currentTarget.style.transform = 'scale(1)'; }}
+                    >
+                      <Icon size={17} />
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-
-            {/* ── FILA 4 · Pies: calzado centrado abajo ── */}
-            {generatedOutfit.calzado && (
-              <div style={{ display: 'flex', justifyContent: 'center' }}>
-                <div style={{ width: '50%' }}>
-                  <OutfitItemCard
-                    label="Calzado"
-                    item={generatedOutfit.calzado}
-                    onShuffle={() => handleShuffleItem('calzado')}
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Action buttons */}
@@ -624,75 +629,6 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── Child component: Outfit Item Card ─────────────────────────────────────────
-
-interface OutfitItemCardProps {
-  label: string;
-  item: Prenda;
-  onShuffle: () => void;
-  isSmall?: boolean;
-  fill?: boolean;
-}
-
-function OutfitItemCard({ label, item, onShuffle, isSmall, fill }: OutfitItemCardProps) {
-  return (
-    <div
-      className="prenda-card pop-in"
-      style={{ flexDirection: isSmall ? 'row' : 'column', height: fill ? '100%' : (isSmall ? '80px' : 'auto'), position: 'relative' }}
-    >
-      <div
-        className="prenda-img-container"
-        style={fill
-          ? { flex: 1, width: '100%', minHeight: '220px' }
-          : { aspectRatio: isSmall ? '1/1' : '3/4', width: isSmall ? '80px' : '100%' }}
-      >
-        <img src={item.image_url} alt={label} className="prenda-img" />
-      </div>
-
-      <div
-        className="prenda-info"
-        style={{ padding: isSmall ? '10px 12px' : '10px', display: 'flex', flexDirection: 'column', justifyContent: isSmall ? 'center' : 'flex-start', flex: isSmall ? 1 : undefined }}
-      >
-        <span
-          className="prenda-category"
-          style={{ fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.03em', marginBottom: '2px' }}
-        >
-          {label}
-        </span>
-
-        {!isSmall && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px', marginTop: '4px' }}>
-            {item.styles.slice(0, 1).map(s => (
-              <span key={s} className="tag-badge" style={{ fontSize: '0.6rem', padding: '1px 4px' }}>#{s}</span>
-            ))}
-            {item.colors.slice(0, 1).map(c => (
-              <span
-                key={c}
-                className="tag-badge"
-                style={{ fontSize: '0.6rem', padding: '1px 4px', display: 'flex', alignItems: 'center', gap: '2px' }}
-              >
-                <span
-                  style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: c, border: c === '#FFFFFF' ? '1px solid #CCC' : undefined }}
-                />
-              </span>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <button
-        onClick={(e) => { e.stopPropagation(); onShuffle(); }}
-        style={{ position: 'absolute', top: isSmall ? '50%' : '8px', right: '8px', transform: isSmall ? 'translateY(-50%)' : 'none', backgroundColor: 'rgba(255, 255, 255, 0.9)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.15)', cursor: 'pointer', color: 'var(--text-primary)', transition: 'transform 0.2s ease, background-color 0.2s' }}
-        onMouseDown={(e) => { e.currentTarget.style.transform = isSmall ? 'translateY(-50%) scale(0.9)' : 'scale(0.9)'; }}
-        onMouseUp={(e)   => { e.currentTarget.style.transform = isSmall ? 'translateY(-50%) scale(1)'   : 'scale(1)'; }}
-        title="Cambiar esta prenda"
-      >
-        <RefreshCw size={13} />
-      </button>
     </div>
   );
 }
