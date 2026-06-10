@@ -1,23 +1,15 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { Prenda } from '../types';
 
-// ── Gemini setup ──────────────────────────────────────────────────────────────
-// NOTE: VITE_ vars are embedded in the client bundle, so this key is visible to
-// anyone who opens the deployed site. For production, prefer a serverless proxy
-// that keeps the key server-side. Configure VITE_GEMINI_API_KEY in .env.local
-// (git-ignored) for local dev and in the Vercel dashboard for deploys.
-const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
-const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }) : null;
-
-export const isStylistConfigured = Boolean(model);
+// The actual Gemini call lives in api/chat.ts (Vercel serverless function).
+// The API key is kept server-side via process.env.GEMINI_API_KEY — it is
+// never embedded in the client bundle.
+export const isStylistConfigured = true;
 
 export interface ChatMessage {
   role: 'user' | 'stylist';
   text: string;
 }
 
-// Summarised wardrobe entry sent to the model as JSON context.
 function summarizePrenda(p: Prenda) {
   return {
     id: p.id,
@@ -50,8 +42,8 @@ const SYSTEM_ROLE =
   'como marca técnica al final de la frase correspondiente.';
 
 /**
- * Sends a contextual styling request to Gemini and returns the raw reply.
- * Throws when the model isn't configured or the request fails.
+ * Sends a contextual styling request to the /api/chat serverless endpoint
+ * and returns the raw reply text. Throws on network or server errors.
  */
 export async function askStylist(
   userMessage: string,
@@ -59,10 +51,6 @@ export async function askStylist(
   activeOutfit: Record<string, Prenda | undefined>,
   filters: string,
 ): Promise<string> {
-  if (!model) {
-    throw new Error('El estilista no está configurado: falta VITE_GEMINI_API_KEY.');
-  }
-
   const prompt = [
     SYSTEM_ROLE,
     '',
@@ -79,6 +67,17 @@ export async function askStylist(
     userMessage,
   ].join('\n');
 
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json() as { error?: string };
+    throw new Error(err.error ?? `Error del servidor: ${res.status}`);
+  }
+
+  const data = await res.json() as { text: string };
+  return data.text;
 }
