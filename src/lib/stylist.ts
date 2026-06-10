@@ -1,9 +1,14 @@
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { Prenda } from '../types';
 
-// The actual Gemini call lives in api/chat.ts (Vercel serverless function).
-// The API key is kept server-side via process.env.GEMINI_API_KEY — it is
-// never embedded in the client bundle.
-export const isStylistConfigured = true;
+// NOTE: VITE_ vars are embedded in the client bundle at build time.
+// Configure VITE_GEMINI_API_KEY in .env.local for local dev and in the
+// Vercel dashboard (Settings → Environment Variables) for production.
+const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+const genAI = apiKey ? new GoogleGenerativeAI(apiKey) : null;
+const model = genAI ? genAI.getGenerativeModel({ model: 'gemini-1.5-flash' }) : null;
+
+export const isStylistConfigured = Boolean(model);
 
 export interface ChatMessage {
   role: 'user' | 'stylist';
@@ -42,8 +47,8 @@ const SYSTEM_ROLE =
   'como marca técnica al final de la frase correspondiente.';
 
 /**
- * Sends a contextual styling request to the /api/chat serverless endpoint
- * and returns the raw reply text. Throws on network or server errors.
+ * Sends a contextual styling request to Gemini and returns the raw reply.
+ * Throws when the model isn't configured or the request fails.
  */
 export async function askStylist(
   userMessage: string,
@@ -51,6 +56,10 @@ export async function askStylist(
   activeOutfit: Record<string, Prenda | undefined>,
   filters: string,
 ): Promise<string> {
+  if (!model) {
+    throw new Error('El estilista no está configurado: falta VITE_GEMINI_API_KEY.');
+  }
+
   const prompt = [
     SYSTEM_ROLE,
     '',
@@ -67,17 +76,6 @@ export async function askStylist(
     userMessage,
   ].join('\n');
 
-  const res = await fetch('/api/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json() as { error?: string };
-    throw new Error(err.error ?? `Error del servidor: ${res.status}`);
-  }
-
-  const data = await res.json() as { text: string };
-  return data.text;
+  const result = await model.generateContent(prompt);
+  return result.response.text();
 }
