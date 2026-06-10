@@ -27,7 +27,7 @@ const CATEGORY_LABEL: Record<Prenda['category'], string> = {
   abrigo:     'Abrigo',
   calzado:    'Calzado',
   accesorios: 'Accesorio',
-  carteras:   'Cartera',
+  carteras:   'Carteras',
 };
 
 export function ClosetView({ items, onRefresh }: ClosetViewProps) {
