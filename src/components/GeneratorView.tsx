@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { RefreshCw, Heart, AlertCircle, Sparkles, Check, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag, Lock, X } from 'lucide-react';
+import { RefreshCw, Heart, AlertCircle, Sparkles, Check, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag, Lock, X, Send } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Prenda, Clima } from '../types';
 import { insertOutfitFavorito } from '../lib/db';
 import { MANNEQUIN_MAP, LAYER_ORDER } from '../lib/maniqui';
 import mannequinSrc from '../assets/modelos/mannequin.svg';
+import { askStylist, isStylistConfigured } from '../lib/stylist';
+import type { ChatMessage } from '../lib/stylist';
 
 interface GeneratorViewProps {
   items: Prenda[];
@@ -385,6 +387,19 @@ export function GeneratorView({ items, onFavoriteSaved, prendaAncla, onClearAncl
     }
   };
 
+  // Apply a stylist-suggested garment to its slot, respecting route exclusivity
+  // (full_body clears separates and vice-versa) and the anchor lock.
+  const applyStylistPick = (p: Prenda) => {
+    if (prendaAncla && prendaAncla.category === p.category) return;
+    setGeneratedOutfit(prev => {
+      const base: OutfitState = { ...(prev ?? {}) };
+      if (p.category === 'full_body') { delete base.superior; delete base.inferior; }
+      if (p.category === 'superior' || p.category === 'inferior') { delete base.full_body; }
+      base[p.category] = p;
+      return base;
+    });
+  };
+
   const handleSaveFavorite = async () => {
     if (!generatedOutfit) return;
     setIsSaving(true);
@@ -670,6 +685,14 @@ export function GeneratorView({ items, onFavoriteSaved, prendaAncla, onClearAncl
               <Heart size={16} fill="white" /> Guardar Combinación
             </button>
           </div>
+
+          {/* ── Ask Luci / Roast My Fit (estilista IA) ── */}
+          <StylistChat
+            wardrobe={items}
+            activeOutfit={generatedOutfit ?? {}}
+            filters={`Clima: ${selectedClima} · Ocasión: ${selectedFormality} · Estilo: ${selectedStyle} · Colores: ${[...primaryColors, ...secondaryColors].join('/') || 'libres'}`}
+            onApplyPick={applyStylistPick}
+          />
         </div>
       )}
 
@@ -784,6 +807,157 @@ function ColorSwatchRow({ selected, onToggle }: ColorSwatchRowProps) {
           </button>
         );
       })}
+    </div>
+  );
+}
+
+// ── Child component: Stylist Chat (Ask Luci / Roast My Fit) ───────────────────
+
+const ROAST_PROMPT =
+  'Hacé un roast con MUCHO humor (pero cariñoso y constructivo) del outfit que tengo ' +
+  'puesto ahora mismo en el maniquí. Sé picante pero buena onda y cerrá con un consejo ' +
+  'concreto para mejorarlo usando ropa de mi armario.';
+
+const SUGGEST_PROMPT =
+  '¿Qué me pongo hoy? Dame una sugerencia copada según mis filtros activos y lo que tengo ' +
+  'en el armario. Si conviene, proponé cambiar alguna prenda del maniquí.';
+
+interface StylistChatProps {
+  wardrobe: Prenda[];
+  activeOutfit: OutfitState;
+  filters: string;
+  onApplyPick: (p: Prenda) => void;
+}
+
+function StylistChat({ wardrobe, activeOutfit, filters, onApplyPick }: StylistChatProps) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState('');
+  const [loading, setLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, loading]);
+
+  const send = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || loading) return;
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text: trimmed }]);
+    setLoading(true);
+    try {
+      const reply = await askStylist(trimmed, wardrobe, activeOutfit, filters);
+      // Capture [PRENDA:id] tokens → auto-apply real wardrobe items to the mannequin.
+      const ids = Array.from(reply.matchAll(/\[PRENDA:([^\]]+)\]/g), m => m[1].trim());
+      ids.forEach(id => {
+        const pick = wardrobe.find(p => p.id === id);
+        if (pick) onApplyPick(pick);
+      });
+      const clean = reply.replace(/\[PRENDA:[^\]]+\]/g, '').replace(/[ \t]{2,}/g, ' ').trim();
+      setMessages(prev => [...prev, { role: 'stylist', text: clean || '¡Listo! Te actualicé el look. ✨' }]);
+    } catch {
+      setMessages(prev => [
+        ...prev,
+        { role: 'stylist', text: 'Uy, no pude conectar con la estilista 😅 Revisá la API key o tu señal e intentá de nuevo.' },
+      ]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isStylistConfigured) {
+    return (
+      <div className="glass-panel" style={{ padding: '14px', fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Sparkles size={16} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
+        <span>Configurá <code style={{ fontSize: '0.78rem' }}>VITE_GEMINI_API_KEY</code> para hablar con tu estilista.</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="glass-panel"
+      style={{
+        padding: '14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '10px',
+        background: 'linear-gradient(180deg, rgba(255, 240, 245, 0.5), var(--panel-bg))',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <Sparkles size={16} style={{ color: 'var(--accent-color)' }} />
+        <h3 style={{ fontFamily: 'var(--font-serif)', fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+          Preguntale a Luci
+        </h3>
+      </div>
+
+      {/* Message history */}
+      <div
+        ref={scrollRef}
+        style={{ maxHeight: '260px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', padding: '4px 2px' }}
+      >
+        {messages.length === 0 && !loading && (
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', opacity: 0.85, textAlign: 'center', padding: '10px 6px', lineHeight: 1.45 }}>
+            Tu estilista personal ✨ Pedile una idea o tirale un "Roast My Fit" para una crítica con onda.
+          </p>
+        )}
+        {messages.map((m, i) => (
+          <div
+            key={i}
+            style={{
+              alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+              maxWidth: '85%',
+              padding: '9px 12px',
+              borderRadius: m.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+              backgroundColor: m.role === 'user' ? 'var(--accent-color)' : 'rgba(255,255,255,0.88)',
+              color: m.role === 'user' ? '#fff' : 'var(--text-primary)',
+              border: m.role === 'user' ? 'none' : '1px solid var(--panel-border)',
+              fontSize: '0.84rem',
+              lineHeight: 1.5,
+              whiteSpace: 'pre-wrap',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            {m.text}
+          </div>
+        ))}
+        {loading && (
+          <div style={{ alignSelf: 'flex-start', fontSize: '0.8rem', color: 'var(--text-secondary)', fontStyle: 'italic', padding: '6px 4px' }}>
+            Luci está pensando…
+          </div>
+        )}
+      </div>
+
+      {/* Quick prompts */}
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button type="button" className="chip" onClick={() => send(SUGGEST_PROMPT)} disabled={loading} style={{ flex: 1, fontSize: '0.78rem', cursor: loading ? 'default' : 'pointer' }}>
+          ¿Qué me pongo hoy?
+        </button>
+        <button type="button" className="chip" onClick={() => send(ROAST_PROMPT)} disabled={loading} style={{ flex: 1, fontSize: '0.78rem', cursor: loading ? 'default' : 'pointer' }}>
+          🔥 Roast My Fit
+        </button>
+      </div>
+
+      {/* Input */}
+      <form onSubmit={(e) => { e.preventDefault(); send(input); }} style={{ display: 'flex', gap: '8px' }}>
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Escribile a tu estilista…"
+          disabled={loading}
+          style={{ flex: 1, padding: '10px 12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.88rem', outline: 'none' }}
+        />
+        <button
+          type="submit"
+          disabled={loading || !input.trim()}
+          aria-label="Enviar"
+          style={{ width: '44px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-md)', border: 'none', backgroundColor: 'var(--accent-color)', color: '#fff', cursor: loading || !input.trim() ? 'default' : 'pointer', opacity: loading || !input.trim() ? 0.6 : 1 }}
+        >
+          <Send size={16} />
+        </button>
+      </form>
     </div>
   );
 }
