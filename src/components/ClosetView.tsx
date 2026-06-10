@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trash2, ShoppingBag, Sparkles, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, LayoutGrid, ChevronDown } from 'lucide-react';
+import { Trash2, ShoppingBag, Sparkles, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, LayoutGrid, ChevronDown, Wand2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Prenda } from '../types';
 import { deletePrenda } from '../lib/db';
@@ -7,6 +7,7 @@ import { deletePrenda } from '../lib/db';
 interface ClosetViewProps {
   items: Prenda[];
   onRefresh: () => void;
+  onGenerateWithPrenda?: (p: Prenda) => void;
 }
 
 const CATEGORY_TABS: { value: string; label: string; icon: LucideIcon }[] = [
@@ -30,7 +31,7 @@ const CATEGORY_LABEL: Record<Prenda['category'], string> = {
   carteras:   'Carteras',
 };
 
-export function ClosetView({ items, onRefresh }: ClosetViewProps) {
+export function ClosetView({ items, onRefresh, onGenerateWithPrenda }: ClosetViewProps) {
   const [activeTab, setActiveTab] = useState<string>('todos');
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -128,6 +129,31 @@ export function ClosetView({ items, onRefresh }: ClosetViewProps) {
                 >
                   <Trash2 size={15} />
                 </button>
+                {onGenerateWithPrenda && (
+                  <button
+                    onClick={() => onGenerateWithPrenda(item)}
+                    title="Generar outfit con esto"
+                    aria-label="Generar outfit con esto"
+                    style={{
+                      position: 'absolute',
+                      top: '8px',
+                      left: '8px',
+                      background: 'rgba(255, 255, 255, 0.9)',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: '28px',
+                      height: '28px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--accent-color)',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
+                    }}
+                  >
+                    <Wand2 size={15} />
+                  </button>
+                )}
               </div>
 
               <div className="prenda-info">

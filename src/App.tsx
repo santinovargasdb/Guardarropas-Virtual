@@ -17,6 +17,7 @@ function App() {
   const [prendas, setPrendas] = useState<Prenda[]>([]);
   const [favorites, setFavorites] = useState<OutfitFavorito[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [prendaAncla, setPrendaAncla] = useState<Prenda | null>(null);
 
   // Fetch all items and favorites
   const loadData = async () => {
@@ -41,6 +42,12 @@ function App() {
 
   const handleRefresh = () => {
     loadData();
+  };
+
+  // Jump to the generator with a chosen garment fixed as the outfit anchor.
+  const handleGenerateWithPrenda = (p: Prenda) => {
+    setPrendaAncla(p);
+    setActiveTab('combinar');
   };
 
   return (
@@ -93,11 +100,11 @@ function App() {
             )}
             
             {activeTab === 'armario' && (
-              <ClosetView items={prendas} onRefresh={handleRefresh} />
+              <ClosetView items={prendas} onRefresh={handleRefresh} onGenerateWithPrenda={handleGenerateWithPrenda} />
             )}
             
             {activeTab === 'combinar' && (
-              <GeneratorView items={prendas} onFavoriteSaved={handleRefresh} />
+              <GeneratorView items={prendas} onFavoriteSaved={handleRefresh} prendaAncla={prendaAncla} onClearAncla={() => setPrendaAncla(null)} />
             )}
             
             {activeTab === 'favoritos' && (

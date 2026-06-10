@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { RefreshCw, Heart, AlertCircle, Sparkles, Check, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag } from 'lucide-react';
+import { RefreshCw, Heart, AlertCircle, Sparkles, Check, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag, Lock, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Prenda, Clima } from '../types';
 import { insertOutfitFavorito } from '../lib/db';
@@ -9,6 +9,8 @@ import mannequinSrc from '../assets/modelos/mannequin.svg';
 interface GeneratorViewProps {
   items: Prenda[];
   onFavoriteSaved?: () => void;
+  prendaAncla?: Prenda | null;
+  onClearAncla?: () => void;
 }
 
 type OutfitState = {
@@ -97,6 +99,12 @@ function classifyColor(hex: string): string {
   return bestKey;
 }
 
+// Maps a garment's hex palette to the coarse colour families used by the filters —
+// this is how an anchor garment's colours seed the chromatic triage for the look.
+function hexesToFamilies(hexes: string[]): string[] {
+  return Array.from(new Set(hexes.map(classifyColor)));
+}
+
 // Items whose colour set contains at least one of the requested families.
 function matchByColor(pool: Prenda[], keys: string[]): Prenda[] {
   if (keys.length === 0) return [];
@@ -118,7 +126,7 @@ function colorPriorityPool(pool: Prenda[], tiers: string[][]): Prenda[] {
   return neutral.length > 0 ? neutral : pool;
 }
 
-export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
+export function GeneratorView({ items, onFavoriteSaved, prendaAncla, onClearAncla }: GeneratorViewProps) {
   const [selectedClima,     setSelectedClima]     = useState<Clima>(getDefaultClima());
   const [selectedFormality, setSelectedFormality] = useState<Prenda['formality']>('casual');
   const [selectedStyle,     setSelectedStyle]     = useState<string>('todos');
@@ -236,10 +244,14 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         generateTimeoutRef.current = null;
       };
 
+      // Anchor garment (from "generar con esto"): pins its slot and seeds colours.
+      const anchor = prendaAncla ?? null;
+      const anchorCat = anchor ? anchor.category : null;
+
       // ════════════════════════════════════════════════════════════════════════════
       // GATE 1 — Calzado (always mandatory)
       // ════════════════════════════════════════════════════════════════════════════
-      if (byCat.calzado.length === 0) {
+      if (byCat.calzado.length === 0 && anchorCat !== 'calzado') {
         fail(
           '¡No encontramos calzado que combine con estos filtros! ' +
           'Probá cambiando el estilo o cargá más zapatos en tu armario.'
@@ -250,7 +262,7 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       // ════════════════════════════════════════════════════════════════════════════
       // GATE 2 — Abrigo (mandatory when clima = frío)
       // ════════════════════════════════════════════════════════════════════════════
-      if (selectedClima === 'frio' && byCat.abrigo.length === 0) {
+      if (selectedClima === 'frio' && byCat.abrigo.length === 0 && anchorCat !== 'abrigo') {
         fail(
           '¡Hace frío! Necesitás un abrigo compatible, pero no encontramos ' +
           'ninguno con estos filtros. ¡Cargá un tapado o campera y volvé a intentarlo!'
@@ -263,8 +275,13 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       //   · Route A (Dos Piezas): superior + inferior
       //   · Route B (Una Pieza):  full_body
       // ════════════════════════════════════════════════════════════════════════════
-      const canSeparates = byCat.superior.length > 0 && byCat.inferior.length > 0;
-      const canOnePiece  = byCat.full_body.length > 0;
+      // Route viability — the anchor can force a route (a superior/inferior anchor
+      // needs only the complementary piece; a full_body anchor is always one-piece).
+      const canSeparates =
+        anchorCat === 'superior' ? byCat.inferior.length > 0 :
+        anchorCat === 'inferior' ? byCat.superior.length > 0 :
+        byCat.superior.length > 0 && byCat.inferior.length > 0;
+      const canOnePiece = anchorCat === 'full_body' ? true : byCat.full_body.length > 0;
 
       if (!canSeparates && !canOnePiece) {
         fail(
@@ -275,27 +292,42 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       }
 
       // ════════════════════════════════════════════════════════════════════════════
-      // COMPOSE — pick a route, then complete with calzado / abrigo / accesorios
+      // COMPOSE — pick a route, fix the anchor slot, complete the rest
       // ════════════════════════════════════════════════════════════════════════════
-      // If both routes are viable, flip a coin; otherwise take the only one available.
-      const useOnePiece = canOnePiece && (!canSeparates || Math.random() < 0.5);
+      // The anchor forces its route; otherwise flip a coin / take what's available.
+      let useOnePiece: boolean;
+      if (anchorCat === 'full_body') useOnePiece = true;
+      else if (anchorCat === 'superior' || anchorCat === 'inferior') useOnePiece = false;
+      else useOnePiece = canOnePiece && (!canSeparates || Math.random() < 0.5);
 
-      // Calzado is always present (gated above).
+      if (useOnePiece && !canOnePiece) {
+        fail('¡No hay una prenda entera (vestido o mono) que combine con estos filtros!');
+        return;
+      }
+      if (!useOnePiece && !canSeparates) {
+        fail('¡Necesitás una prenda superior y una inferior para armar este look! Cargá más prendas o cambiá los filtros.');
+        return;
+      }
+
+      // pin(): returns the anchor when it owns this slot, else a triaged pick.
+      const pin = (cat: keyof OutfitState, poolItems: Prenda[]): Prenda =>
+        anchor && anchor.category === cat ? anchor : rand(slotPool(cat, poolItems));
+
       const outfit: OutfitState = {
-        calzado: rand(slotPool('calzado', byCat.calzado)),
+        calzado: pin('calzado', byCat.calzado),
       };
 
       if (useOnePiece) {
-        // Route B (Una Pieza): full_body only → superior/inferior stay empty.
-        outfit.full_body = rand(slotPool('full_body', byCat.full_body));
+        outfit.full_body = pin('full_body', byCat.full_body);
       } else {
-        // Route A (Dos Piezas): superior + inferior → full_body stays empty.
-        outfit.superior = rand(slotPool('superior', byCat.superior));
-        outfit.inferior = rand(slotPool('inferior', byCat.inferior));
+        outfit.superior = pin('superior', byCat.superior);
+        outfit.inferior = pin('inferior', byCat.inferior);
       }
 
-      // Abrigo: mandatory for frío (gated above), optional for templado/calor
-      if (byCat.abrigo.length > 0) {
+      // Abrigo: forced if it's the anchor; else mandatory in frío, optional in templado.
+      if (anchor && anchor.category === 'abrigo') {
+        outfit.abrigo = anchor;
+      } else if (byCat.abrigo.length > 0) {
         if (selectedClima === 'frio') {
           outfit.abrigo = rand(slotPool('abrigo', byCat.abrigo));
         } else if (selectedClima === 'templado' && Math.random() > 0.4) {
@@ -303,13 +335,17 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
         }
       }
 
-      // Accesorios: optional accent slot (~70% chance when available).
-      if (byCat.accesorios.length > 0 && Math.random() > 0.3) {
+      // Accesorios: forced if anchor; else optional accent (~70% when available).
+      if (anchor && anchor.category === 'accesorios') {
+        outfit.accesorios = anchor;
+      } else if (byCat.accesorios.length > 0 && Math.random() > 0.3) {
         outfit.accesorios = rand(slotPool('accesorios', byCat.accesorios));
       }
 
-      // Carteras: always included when there is stock (both routes).
-      if (byCat.carteras.length > 0) {
+      // Carteras: forced if anchor; else always included when there is stock.
+      if (anchor && anchor.category === 'carteras') {
+        outfit.carteras = anchor;
+      } else if (byCat.carteras.length > 0) {
         outfit.carteras = rand(slotPool('carteras', byCat.carteras));
       }
 
@@ -322,6 +358,8 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
 
   const handleShuffleItem = (category: keyof OutfitState) => {
     if (!generatedOutfit) return;
+    // The anchor slot is locked — it's the piece the look is built around.
+    if (prendaAncla && prendaAncla.category === category) return;
 
     const catPool = items.filter(
       item =>
@@ -378,13 +416,32 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
     }
   };
 
-  // Auto-generate a first outfit when items load for the first time
+  // Auto-generate a first outfit when items load (unless an anchor garment is
+  // driving the look — the anchor flow below generates on its own).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (items.length > 0 && !generatedOutfit && !errorMsg) {
+    if (items.length > 0 && !generatedOutfit && !errorMsg && !prendaAncla) {
       handleGenerate();
     }
   }, [items]);
+
+  // Keep a ref to the latest generator so the anchor flow can run generation
+  // AFTER its filter state-updates commit (avoids a stale-closure generation).
+  const latestGenerateRef = useRef<() => void>(() => {});
+  useEffect(() => { latestGenerateRef.current = handleGenerate; });
+
+  // Anchor flow: mirror the garment's clima/ocasión, inherit its colours into the
+  // chromatic filters, then build a look around it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!prendaAncla) return;
+    setSelectedClima(prendaAncla.clima[0] ?? getDefaultClima());
+    setSelectedFormality(prendaAncla.formality);
+    setPrimaryColors(hexesToFamilies(prendaAncla.primary_colors ?? prendaAncla.colors));
+    setSecondaryColors(hexesToFamilies(prendaAncla.secondary_colors ?? []));
+    const id = setTimeout(() => latestGenerateRef.current(), 0);
+    return () => clearTimeout(id);
+  }, [prendaAncla]);
 
   const hasOutfit = generatedOutfit !== null;
 
@@ -470,6 +527,39 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
       {hasOutfit && !errorMsg && (
         <div className={`fade-in${isShuffling ? ' shuffling' : ''}`} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div className="glass-panel" style={{ padding: '14px', position: 'relative' }}>
+            {prendaAncla && (
+              <div
+                className="fade-in"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  marginBottom: '12px',
+                  padding: '8px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: 'rgba(212, 163, 115, 0.12)',
+                  border: '1px solid var(--panel-border)',
+                  fontSize: '0.78rem',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <Sparkles size={14} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>
+                  Armando el look alrededor de tu <strong>{MANNEQUIN_MAP[prendaAncla.category].label.toLowerCase()}</strong>
+                </span>
+                {onClearAncla && (
+                  <button
+                    type="button"
+                    onClick={onClearAncla}
+                    title="Quitar ancla"
+                    aria-label="Quitar ancla"
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.74rem', flexShrink: 0 }}
+                  >
+                    <X size={14} /> Quitar
+                  </button>
+                )}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
 
               {/* ── Maniquí Virtual: canvas anatómico por capas ── */}
@@ -530,33 +620,36 @@ export function GeneratorView({ items, onFavoriteSaved }: GeneratorViewProps) {
               <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', flexShrink: 0 }}>
                 {SHUFFLE_SLOTS.filter(s => generatedOutfit[s.slot]).map(s => {
                   const Icon = s.icon;
+                  const isLocked = prendaAncla?.category === s.slot;
                   return (
                     <button
                       key={s.slot}
                       type="button"
-                      onClick={() => handleShuffleItem(s.slot)}
-                      title={`Cambiar ${s.label}`}
-                      aria-label={`Cambiar ${s.label}`}
+                      onClick={() => { if (!isLocked) handleShuffleItem(s.slot); }}
+                      disabled={isLocked}
+                      title={isLocked ? `${s.label} fijado (ancla del look)` : `Cambiar ${s.label}`}
+                      aria-label={isLocked ? `${s.label} fijado` : `Cambiar ${s.label}`}
                       style={{
+                        position: 'relative',
                         width: '40px',
                         height: '40px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                         borderRadius: '50%',
-                        border: '1px solid var(--panel-border)',
-                        backgroundColor: 'var(--bg-color)',
+                        border: `1px solid ${isLocked ? 'var(--accent-color)' : 'var(--panel-border)'}`,
+                        backgroundColor: isLocked ? 'var(--accent-light)' : 'var(--bg-color)',
                         color: 'var(--accent-color)',
-                        cursor: 'pointer',
+                        cursor: isLocked ? 'default' : 'pointer',
                         boxShadow: 'var(--shadow-sm)',
                         transition: 'transform 0.15s ease, background-color 0.15s ease',
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--accent-light)'; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-color)'; }}
-                      onMouseDown={(e) => { e.currentTarget.style.transform = 'scale(0.9)'; }}
-                      onMouseUp={(e)   => { e.currentTarget.style.transform = 'scale(1)'; }}
+                      onMouseEnter={(e) => { if (!isLocked) e.currentTarget.style.backgroundColor = 'var(--accent-light)'; }}
+                      onMouseLeave={(e) => { if (!isLocked) e.currentTarget.style.backgroundColor = 'var(--bg-color)'; }}
+                      onMouseDown={(e) => { if (!isLocked) e.currentTarget.style.transform = 'scale(0.9)'; }}
+                      onMouseUp={(e)   => { if (!isLocked) e.currentTarget.style.transform = 'scale(1)'; }}
                     >
-                      <Icon size={17} />
+                      {isLocked ? <Lock size={15} /> : <Icon size={17} />}
                     </button>
                   );
                 })}
