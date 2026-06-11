@@ -1,42 +1,56 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 640" fill="none">
   <defs>
-    <linearGradient id="bodyGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#F4E9DD"/>
-      <stop offset="1" stop-color="#DEC9B6"/>
+    <linearGradient id="bodyDark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#403B35"/>
+      <stop offset="1" stop-color="#221E1A"/>
     </linearGradient>
-    <linearGradient id="hairGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2A2724"/>
-      <stop offset="1" stop-color="#0C0B0A"/>
+    <linearGradient id="skinGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F4E9DD"/>
+      <stop offset="1" stop-color="#E7D3C0"/>
+    </linearGradient>
+    <linearGradient id="hairGrad" x1="0" y1="0" x2="0.15" y2="1">
+      <stop offset="0" stop-color="#171615"/>
+      <stop offset="1" stop-color="#040404"/>
     </linearGradient>
   </defs>
 
   <!-- soft ground shadow -->
-  <ellipse cx="150" cy="624" rx="66" ry="9" fill="#C9A57E" opacity="0.15"/>
+  <ellipse cx="150" cy="624" rx="64" ry="9" fill="#7A6450" opacity="0.18"/>
 
-  <!-- back hair: frames the face and falls past the shoulders -->
-  <path d="M150 16 C112 16 92 46 92 92 C92 122 98 146 110 158 C117 152 119 130 116 106 C115 74 128 48 150 46 C172 48 185 74 184 106 C181 130 183 152 190 158 C202 146 208 122 208 92 C208 46 188 16 150 16 Z" fill="url(#hairGrad)"/>
+  <!-- ── BODY (dark silhouette) ──────────────────────────────────────────── -->
+  <!-- arms with simple hands, spring from the shoulders and rest along the body -->
+  <path d="M121 138 C104 164 97 206 99 248 C100 286 105 320 110 346 C108 356 110 366 117 368 C124 369 127 360 125 350 C123 320 122 286 121 248 C121 200 123 180 131 146 Z" fill="url(#bodyDark)"/>
+  <path d="M179 138 C196 164 203 206 201 248 C200 286 195 320 190 346 C192 356 190 366 183 368 C176 369 173 360 175 350 C177 320 178 286 179 248 C179 200 177 180 169 146 Z" fill="url(#bodyDark)"/>
 
-  <!-- arms: spring from the shoulders and rest along the body, hands at the hips -->
-  <path d="M110 132 C96 150 90 200 92 250 C93 285 98 312 104 330 C110 322 112 300 112 272 C113 225 116 170 122 140 Z" fill="url(#bodyGrad)"/>
-  <path d="M190 132 C204 150 210 200 208 250 C207 285 202 312 196 330 C190 322 188 300 188 272 C187 225 184 170 178 140 Z" fill="url(#bodyGrad)"/>
+  <!-- torso + hips: sloped shoulders, soft bust, narrow waist, full rounded hips -->
+  <path d="M150 116 C134 116 122 121 113 137 C104 160 102 185 108 211 C117 231 126 234 129 250 C103 283 99 315 106 346 C111 373 116 393 125 412 L175 412 C184 393 189 373 194 346 C201 315 197 283 171 250 C174 234 183 231 192 211 C198 185 196 160 187 137 C178 121 166 116 150 116 Z" fill="url(#bodyDark)"/>
 
-  <!-- neck -->
-  <path d="M140 90 L160 90 L162 124 C157 130 143 130 138 124 Z" fill="url(#bodyGrad)"/>
-
-  <!-- torso + hips: one continuous feminine silhouette with defined shoulders -->
-  <path d="M108 131 C102 150 100 172 104 196 C110 214 122 220 126 236 C108 274 106 304 110 332 C113 358 117 380 125 400 L175 400 C183 380 187 358 190 332 C194 304 192 274 174 236 C178 220 190 214 196 196 C200 172 198 150 192 131 C170 123 130 123 108 131 Z" fill="url(#bodyGrad)"/>
-
-  <!-- legs: slender, tapering, with a natural gap -->
-  <path d="M124 384 C120 450 122 520 128 576 C129 586 139 586 140 576 C146 520 146 450 146 384 Z" fill="url(#bodyGrad)"/>
-  <path d="M176 384 C180 450 178 520 172 576 C171 586 161 586 160 576 C154 520 154 450 154 384 Z" fill="url(#bodyGrad)"/>
+  <!-- legs: full thighs tapering through the knee to slim ankles -->
+  <path d="M126 396 C120 432 120 462 123 490 C125 520 126 552 131 578 C132 587 140 587 141 578 C145 552 146 520 144 490 C147 462 147 432 142 396 Z" fill="url(#bodyDark)"/>
+  <path d="M174 396 C180 432 180 462 177 490 C175 520 174 552 169 578 C168 587 160 587 159 578 C155 552 154 520 156 490 C153 462 153 432 158 396 Z" fill="url(#bodyDark)"/>
 
   <!-- feet -->
-  <ellipse cx="132" cy="583" rx="15" ry="8" fill="url(#bodyGrad)"/>
-  <ellipse cx="168" cy="583" rx="15" ry="8" fill="url(#bodyGrad)"/>
+  <path d="M129 580 C126 591 131 598 140 597 C148 596 148 587 145 581 Z" fill="url(#bodyDark)"/>
+  <path d="M171 580 C174 591 169 598 160 597 C152 596 152 587 155 581 Z" fill="url(#bodyDark)"/>
 
-  <!-- head / face -->
-  <ellipse cx="150" cy="60" rx="28" ry="33" fill="url(#bodyGrad)"/>
+  <!-- skin neck -->
+  <path d="M143 84 C142 100 142 112 145 120 L155 120 C158 112 158 100 157 84 Z" fill="url(#skinGrad)"/>
 
-  <!-- bangs: black fringe down to the forehead -->
-  <path d="M120 40 C124 28 140 24 152 24 C165 24 177 29 179 42 C180 52 174 58 167 57 C162 49 154 47 146 49 C138 50 132 53 128 58 C122 57 119 49 120 40 Z" fill="url(#hairGrad)"/>
+  <!-- ── HAIR: long, straight, jet black, falls vertically below the shoulders ─ -->
+  <path d="M150 16 C122 16 102 36 99 80 L99 232 C99 246 104 256 113 255 C120 254 123 240 123 214 L124 90 C127 58 138 47 150 46 C162 47 173 58 176 90 L177 214 C177 240 180 254 187 255 C196 256 201 246 201 232 L201 80 C198 36 178 16 150 16 Z" fill="url(#hairGrad)"/>
+
+  <!-- skin face -->
+  <ellipse cx="150" cy="60" rx="27" ry="32" fill="url(#skinGrad)"/>
+
+  <!-- dense straight fringe over the forehead -->
+  <path d="M123 34 C134 27 166 27 177 34 C178 44 178 51 177 55 L173 55 L127 55 L123 55 C122 51 122 44 123 34 Z" fill="url(#hairGrad)"/>
+
+  <!-- hair sheen: thin highlights that define the long straight strands -->
+  <g stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2.5" fill="none" stroke-linecap="round">
+    <path d="M103 74 L102 238"/>
+    <path d="M112 62 L111 244"/>
+    <path d="M197 74 L198 238"/>
+    <path d="M188 62 L189 244"/>
+  </g>
+  <path d="M132 33 C145 29 156 29 168 33" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2" fill="none" stroke-linecap="round"/>
 </svg>
