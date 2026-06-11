@@ -22,7 +22,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await model.generateContent(body.prompt);
     return res.status(200).json({ text: result.response.text() });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : 'Error al consultar Gemini';
-    return res.status(500).json({ error: msg });
+    const raw = err instanceof Error ? err.message : String(err);
+    console.error('[Gemini Error]', raw); // surfaced in Vercel function logs
+    if (/\b429\b|quota|rate.?limit|RESOURCE_EXHAUSTED/i.test(raw)) {
+      const m = raw.match(/retry in ([\d.]+)s/i);
+      const wait = m ? `~${Math.ceil(Number(m[1]))} segundos` : 'un ratito';
+      return res.status(429).json({
+        error: `Luci está descansando un momento 😴 Se alcanzó el límite de la API de Gemini. Probá de nuevo en ${wait}.`,
+      });
+    }
+    return res.status(500).json({ error: 'Uy, Luci tuvo un problemita técnico 😅 Probá de nuevo en unos segundos.' });
   }
 }

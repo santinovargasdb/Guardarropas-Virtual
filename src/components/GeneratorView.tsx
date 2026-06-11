@@ -857,10 +857,11 @@ function StylistChat({ wardrobe, activeOutfit, filters, onApplyPick }: StylistCh
       setMessages(prev => [...prev, { role: 'stylist', text: clean || '¡Listo! Te actualicé el look. ✨' }]);
     } catch (error) {
       console.error('[Gemini Error Debug]:', error);
-      const errMsg = error instanceof Error ? error.message : String(error);
+      // askStylist already throws a friendly, self-contained message.
+      const errMsg = error instanceof Error ? error.message : 'Algo salió mal, probá de nuevo. 😅';
       setMessages(prev => [
         ...prev,
-        { role: 'stylist', text: `Error al conectar con la estilista 😅\n${errMsg}` },
+        { role: 'stylist', text: errMsg },
       ]);
     } finally {
       setLoading(false);

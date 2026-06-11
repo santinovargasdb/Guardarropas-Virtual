@@ -32,6 +32,21 @@ function describeOutfit(outfit: Record<string, Prenda | undefined>): string {
   return lines.length ? lines.join('\n') : 'El maniquí está vacío todavía.';
 }
 
+/**
+ * Maps a raw Gemini SDK error to a friendly, self-contained message for the UI.
+ * 429s (free-tier quota / rate limit) are the common case, so we soften them and
+ * surface the retry hint Google sends back when present.
+ */
+function friendlyGeminiError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  if (/\b429\b|quota|rate.?limit|RESOURCE_EXHAUSTED/i.test(raw)) {
+    const m = raw.match(/retry in ([\d.]+)s/i);
+    const wait = m ? `~${Math.ceil(Number(m[1]))} segundos` : 'un ratito';
+    return `Luci está descansando un momento 😴 Se alcanzó el límite de la API de Gemini. Probá de nuevo en ${wait}.`;
+  }
+  return 'Uy, Luci tuvo un problemita técnico 😅 Probá de nuevo en unos segundos.';
+}
+
 const SYSTEM_ROLE =
   'Sos "Luci", la estilista personal de esta app de moda. Hablás en español rioplatense, ' +
   'con mucha onda, divertida, compinche y experta en combinaciones estéticas urbanas. ' +
@@ -82,6 +97,11 @@ export async function askStylist(
     userMessage,
   ].join('\n');
 
-  const result = await model.generateContent(prompt);
-  return result.response.text();
+  try {
+    const result = await model.generateContent(prompt);
+    return result.response.text();
+  } catch (err) {
+    console.error('[Gemini Error]', err); // keep the raw error in DevTools for debugging
+    throw new Error(friendlyGeminiError(err));
+  }
 }
