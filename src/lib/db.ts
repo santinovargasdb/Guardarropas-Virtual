@@ -402,23 +402,46 @@ export async function getPrendas(): Promise<Prenda[]> {
   }
 }
 
+// True when a Supabase write failed only because the optional `nombre` column
+// hasn't been added to the schema yet — lets us retry without it so the write
+// still lands in Supabase instead of silently going to LocalStorage.
+function isMissingNombreColumn(err: unknown): boolean {
+  const e = err as { code?: string; message?: string };
+  const msg = (e?.message ?? '').toLowerCase();
+  return e?.code === 'PGRST204' || (msg.includes('nombre') && msg.includes('column'));
+}
+
+const MIGRATION_HINT =
+  'Supabase: falta la columna "nombre". Corré en el SQL Editor: ' +
+  'alter table prendas add column if not exists nombre text;';
+
 export async function insertPrenda(prenda: Omit<Prenda, 'id' | 'created_at'>): Promise<Prenda> {
   const created_at = new Date().toISOString();
 
   if (isSupabaseConfigured && supabase) {
+    // PostgreSQL auto-generates id via gen_random_uuid() — never include it in the payload.
+    // Note: Supabase column names must match v3 schema (clima, formality as text, not arrays).
+    const payload: Record<string, unknown> = { ...prenda, created_at };
     try {
-      // PostgreSQL auto-generates id via gen_random_uuid() — never include it in the payload.
-      // Note: Supabase column names must match v3 schema (clima, formality as text, not arrays).
-      const payload: Omit<Prenda, 'id'> = { ...prenda, created_at };
-      const { data, error } = await supabase
-        .from('prendas')
-        .insert([payload])
-        .select()
-        .single();
+      const { data, error } = await supabase.from('prendas').insert([payload]).select().single();
       if (error) throw error;
       return normalizePrenda(data);
     } catch (err) {
-      console.error('Supabase insertPrenda failed, falling back to LocalStorage', err);
+      // Retry without `nombre` if the column doesn't exist yet, so the garment
+      // still persists to Supabase (the name is simply dropped until migrated).
+      if (isMissingNombreColumn(err) && 'nombre' in payload) {
+        try {
+          delete payload.nombre;
+          const { data, error } = await supabase.from('prendas').insert([payload]).select().single();
+          if (error) throw error;
+          console.warn(`${MIGRATION_HINT} Prenda guardada SIN nombre.`);
+          return normalizePrenda(data);
+        } catch (err2) {
+          console.error('Supabase insertPrenda retry failed, falling back to LocalStorage', err2);
+        }
+      } else {
+        console.error('Supabase insertPrenda failed, falling back to LocalStorage', err);
+      }
     }
   }
 
@@ -439,17 +462,26 @@ export type PrendaPatch = Partial<
 
 export async function updatePrenda(id: string, patch: PrendaPatch): Promise<Prenda> {
   if (isSupabaseConfigured && supabase) {
+    const payload: Record<string, unknown> = { ...patch };
     try {
-      const { data, error } = await supabase
-        .from('prendas')
-        .update(patch)
-        .eq('id', id)
-        .select()
-        .single();
+      const { data, error } = await supabase.from('prendas').update(payload).eq('id', id).select().single();
       if (error) throw error;
       return normalizePrenda(data);
     } catch (err) {
-      console.error('Supabase updatePrenda failed, falling back to LocalStorage', err);
+      // Retry without `nombre` if the column doesn't exist yet (see insertPrenda).
+      if (isMissingNombreColumn(err) && 'nombre' in payload) {
+        try {
+          delete payload.nombre;
+          const { data, error } = await supabase.from('prendas').update(payload).eq('id', id).select().single();
+          if (error) throw error;
+          console.warn(`${MIGRATION_HINT} Cambios guardados SIN nombre.`);
+          return normalizePrenda(data);
+        } catch (err2) {
+          console.error('Supabase updatePrenda retry failed, falling back to LocalStorage', err2);
+        }
+      } else {
+        console.error('Supabase updatePrenda failed, falling back to LocalStorage', err);
+      }
     }
   }
 
