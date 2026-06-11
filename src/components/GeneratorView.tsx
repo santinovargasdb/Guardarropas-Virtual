@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { RefreshCw, Heart, AlertCircle, Sparkles, Check, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag, Lock, X, Send } from 'lucide-react';
+import { RefreshCw, Heart, AlertCircle, Sparkles, Check, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag, Lock, X, Send, Plus } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Prenda, Clima } from '../types';
 import { insertOutfitFavorito } from '../lib/db';
@@ -138,6 +138,7 @@ export function GeneratorView({ items, onFavoriteSaved, prendaAncla, onClearAncl
   const [generatedOutfit, setGeneratedOutfit] = useState<OutfitState | null>(null);
   const [isGenerating,    setIsGenerating]    = useState(false);
   const [isShuffling,     setIsShuffling]     = useState(false);
+  const [activeSlot,      setActiveSlot]      = useState<keyof OutfitState | null>(null);
   const [outfitName,      setOutfitName]      = useState('');
   const [showSaveDialog,  setShowSaveDialog]  = useState(false);
   const [isSaving,        setIsSaving]        = useState(false);
@@ -400,6 +401,52 @@ export function GeneratorView({ items, onFavoriteSaved, prendaAncla, onClearAncl
     });
   };
 
+  // Remove a single garment from the mannequin (mannequin tap/hover control + category bar).
+  const removeSlot = (category: keyof OutfitState) => {
+    if (prendaAncla?.category === category) return; // anchor is locked
+    setGeneratedOutfit(prev => {
+      if (!prev) return prev;
+      const next = { ...prev };
+      delete next[category];
+      return next;
+    });
+    setActiveSlot(null);
+  };
+
+  // Pick a coherent garment for a category under the active filters (style + colour
+  // triage), or null when nothing of that category matches the current filters.
+  const pickForCategory = (category: keyof OutfitState): Prenda | null => {
+    const catPool = items.filter(
+      item =>
+        item.category === category &&
+        item.formality === selectedFormality &&
+        // Accessories & bags ignore clima (not weather-dependent).
+        (category === 'accesorios' || category === 'carteras' || item.clima.includes(selectedClima))
+    );
+    if (catPool.length === 0) return null;
+    const triaged = slotPool(category, catPool);
+    const pool = triaged.length > 0 ? triaged : catPool;
+    return pool[Math.floor(Math.random() * pool.length)];
+  };
+
+  // Category bar: add a coherent piece (reuses applyStylistPick's route exclusivity).
+  const addCategory = (category: keyof OutfitState) => {
+    const pick = pickForCategory(category);
+    if (!pick) {
+      setErrorMsg(`No tenés ${MANNEQUIN_MAP[category].label.toLowerCase()} que combine con estos filtros. Cargá más prendas o cambiá los filtros.`);
+      return;
+    }
+    setErrorMsg(null);
+    applyStylistPick(pick);
+  };
+
+  // Category bar tap: present → remove, absent → add. The anchor category stays locked.
+  const handleToggleCategory = (category: keyof OutfitState) => {
+    if (prendaAncla?.category === category) return;
+    if (generatedOutfit?.[category]) removeSlot(category);
+    else addCategory(category);
+  };
+
   const handleSaveFavorite = async () => {
     if (!generatedOutfit) return;
     setIsSaving(true);
@@ -577,8 +624,54 @@ export function GeneratorView({ items, onFavoriteSaved, prendaAncla, onClearAncl
             )}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch' }}>
 
+              {/* ── Control lateral izquierdo: agregar / quitar categorías ── */}
+              <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '8px', flexShrink: 0 }}>
+                {SHUFFLE_SLOTS.map(s => {
+                  const Icon = s.icon;
+                  const present = Boolean(generatedOutfit[s.slot]);
+                  const isLocked = prendaAncla?.category === s.slot;
+                  return (
+                    <button
+                      key={s.slot}
+                      type="button"
+                      onClick={() => { if (!isLocked) handleToggleCategory(s.slot); }}
+                      disabled={isLocked}
+                      title={isLocked ? `${s.label} fijado (ancla del look)` : present ? `Quitar ${s.label}` : `Agregar ${s.label}`}
+                      aria-label={isLocked ? `${s.label} fijado` : present ? `Quitar ${s.label}` : `Agregar ${s.label}`}
+                      style={{
+                        position: 'relative',
+                        width: '40px',
+                        height: '40px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderRadius: '50%',
+                        border: `1px solid ${present ? 'var(--accent-color)' : 'var(--panel-border)'}`,
+                        backgroundColor: present ? 'var(--accent-light)' : 'var(--bg-color)',
+                        color: 'var(--accent-color)',
+                        opacity: isLocked ? 0.5 : present ? 1 : 0.4,
+                        cursor: isLocked ? 'default' : 'pointer',
+                        boxShadow: 'var(--shadow-sm)',
+                        transition: 'transform 0.15s ease, opacity 0.15s ease, background-color 0.15s ease',
+                      }}
+                      onMouseDown={(e) => { if (!isLocked) e.currentTarget.style.transform = 'scale(0.9)'; }}
+                      onMouseUp={(e)   => { if (!isLocked) e.currentTarget.style.transform = 'scale(1)'; }}
+                    >
+                      {isLocked ? <Lock size={15} /> : <Icon size={17} />}
+                      {!isLocked && !present && (
+                        <Plus
+                          size={11}
+                          style={{ position: 'absolute', bottom: '-3px', right: '-3px', background: 'var(--bg-color)', borderRadius: '50%', padding: '1px', boxShadow: 'var(--shadow-sm)' }}
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* ── Maniquí Virtual: canvas anatómico por capas ── */}
               <div
+                onMouseLeave={() => setActiveSlot(null)}
                 style={{
                   position: 'relative',
                   flex: 1,
@@ -610,8 +703,11 @@ export function GeneratorView({ items, onFavoriteSaved, prendaAncla, onClearAncl
                       key={slot}
                       src={item.image_url}
                       alt={p.label}
+                      onMouseEnter={() => setActiveSlot(slot)}
+                      onClick={() => setActiveSlot(slot)}
                       style={{
                         position: 'absolute',
+                        cursor: 'pointer',
                         top: p.top,
                         left: p.left,
                         width: p.width,
@@ -629,6 +725,38 @@ export function GeneratorView({ items, onFavoriteSaved, prendaAncla, onClearAncl
                     />
                   );
                 })}
+
+                {/* Hover/tap control: remove the active garment from the look */}
+                {activeSlot && generatedOutfit[activeSlot] && prendaAncla?.category !== activeSlot && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeSlot(activeSlot); }}
+                    title="Eliminar esta prenda"
+                    style={{
+                      position: 'absolute',
+                      top: MANNEQUIN_MAP[activeSlot].top,
+                      left: MANNEQUIN_MAP[activeSlot].left,
+                      transform: 'translate(-50%, -50%)',
+                      zIndex: 100,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      padding: '5px 11px',
+                      borderRadius: '999px',
+                      border: 'none',
+                      backgroundColor: 'rgba(224, 122, 95, 0.96)',
+                      color: '#fff',
+                      fontFamily: 'var(--font-sans)',
+                      fontSize: '0.72rem',
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                    }}
+                  >
+                    <X size={12} /> Eliminar
+                  </button>
+                )}
               </div>
 
               {/* ── Control lateral: shuffle por parte del cuerpo ── */}
