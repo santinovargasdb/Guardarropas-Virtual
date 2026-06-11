@@ -856,7 +856,7 @@ function StylistChat({ wardrobe, activeOutfit, filters, onApplyPick }: StylistCh
       const clean = reply.replace(/\[PRENDA:[^\]]+\]/g, '').replace(/[ \t]{2,}/g, ' ').trim();
       setMessages(prev => [...prev, { role: 'stylist', text: clean || '¡Listo! Te actualicé el look. ✨' }]);
     } catch (error) {
-      console.error('[Gemini Error Debug]:', error);
+      console.error('[Stylist Error Debug]:', error);
       // askStylist already throws a friendly, self-contained message.
       const errMsg = error instanceof Error ? error.message : 'Algo salió mal, probá de nuevo. 😅';
       setMessages(prev => [
@@ -872,7 +872,7 @@ function StylistChat({ wardrobe, activeOutfit, filters, onApplyPick }: StylistCh
     return (
       <div className="glass-panel" style={{ padding: '14px', fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
         <Sparkles size={16} style={{ color: 'var(--accent-color)', flexShrink: 0 }} />
-        <span>Configurá <code style={{ fontSize: '0.78rem' }}>VITE_GEMINI_API_KEY</code> para hablar con tu estilista.</span>
+        <span>El chat de la estilista está desactivado. Quitá <code style={{ fontSize: '0.78rem' }}>VITE_STYLIST_ENABLED=false</code> para habilitarlo.</span>
       </div>
     );
   }
