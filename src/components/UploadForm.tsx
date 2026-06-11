@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
-import { Camera, Image as ImageIcon, Check, Loader2, Sparkles, AlertCircle, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, ShoppingBag } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
+import { Camera, Image as ImageIcon, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { insertPrenda, uploadPrendaImage } from '../lib/db';
 import { compressImage, isAllowedImageType, removeFlatBackground, previewFlatBackground } from '../utils/image';
+import { CATEGORIES, CLIMAS, FORMALITIES, PRESET_STYLES } from '../lib/prendaOptions';
+import { ColorPickerRow } from './ColorPickerRow';
 import type { Prenda, Clima } from '../types';
 
 interface UploadFormProps {
@@ -15,52 +16,10 @@ const MAX_RAW_BYTES        = 20 * 1024 * 1024;
 // 150 KB post-compression cap — keeps free-tier Supabase & LocalStorage healthy
 const MAX_COMPRESSED_BYTES = 150 * 1024;
 
-const CATEGORIES: { value: Prenda['category']; label: string; hint: string; icon: LucideIcon }[] = [
-  { value: 'superior',   label: 'Superior',   hint: 'Remera, Camisa, Suéter',       icon: Shirt },
-  { value: 'inferior',   label: 'Inferior',   hint: 'Pantalón, Jean, Pollera',      icon: RectangleHorizontal },
-  { value: 'full_body',  label: 'Full Body',  hint: 'Vestido, Mono, Enterito',      icon: PersonStanding },
-  { value: 'abrigo',     label: 'Abrigo',     hint: 'Campera, Tapado, Blazer',      icon: Layers },
-  { value: 'calzado',    label: 'Calzado',    hint: 'Zapatillas, Botas, Sandalias', icon: Footprints },
-  { value: 'accesorios', label: 'Accesorios', hint: 'Joyas, Anteojos, Cintos',      icon: Sparkles },
-  { value: 'carteras',   label: 'Carteras',   hint: 'Carteras, Bolsos, Mochilas',   icon: ShoppingBag },
-];
-
-const CLIMAS: { value: Clima; label: string }[] = [
-  { value: 'calor',    label: '☀️ Calor' },
-  { value: 'templado', label: '⛅ Templado' },
-  { value: 'frio',     label: '❄️ Frío' },
-];
-
-const FORMALITIES: { value: Prenda['formality']; label: string }[] = [
-  { value: 'casual',    label: '✨ Casual' },
-  { value: 'formal',    label: '💼 Formal / Trabajo' },
-  { value: 'deportivo', label: '🏃 Deportivo' },
-];
-
-// Official preset styles for Luci's Closet — exact casing is intentional.
-const PRESET_STYLES = [
-  'Jirai', 'Gotico', 'Soft', 'Cute core', 'Chill', 'Boliche',
-];
-
-const PRESETS_COLORS = [
-  { name: 'Negro',    hex: '#1A1A1A' },
-  { name: 'Blanco',   hex: '#FFFFFF', hasBorder: true },
-  { name: 'Gris',     hex: '#8E918F' },
-  { name: 'Crema',    hex: '#F3E5AB' },
-  { name: 'Marrón',   hex: '#704214' },
-  { name: 'Azul',     hex: '#2A52BE' },
-  { name: 'Celeste',  hex: '#87CEEB' },
-  { name: 'Verde',    hex: '#2E8B57' },
-  { name: 'Bordeaux', hex: '#800020' },
-  { name: 'Rosa',     hex: '#FFC0CB' },
-  { name: 'Mostaza',  hex: '#E1AD01' },
-];
-
-const LIGHT_SWATCHES = new Set(['#FFFFFF', '#F3E5AB', '#FFC0CB', '#87CEEB', '#E1AD01']);
-
 export function UploadForm({ onSuccess }: UploadFormProps) {
   const [selectedImage,  setSelectedImage]  = useState<File | null>(null);
   const [previewUrl,     setPreviewUrl]     = useState<string | null>(null);
+  const [nombre,         setNombre]         = useState('');
   const [category,       setCategory]       = useState<Prenda['category']>('superior');
   const [clima,          setClima]          = useState<Clima[]>(['templado']);
   const [formality,      setFormality]      = useState<Prenda['formality']>('casual');
@@ -102,6 +61,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   const resetForm = () => {
     setSelectedImage(null);
     setPreviewUrl(null);
+    setNombre('');
     setCategory('superior');
     setClima(['templado']);
     setFormality('casual');
@@ -204,6 +164,7 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
       const colors = Array.from(new Set([...primaryColors, ...secondaryColors]));
       await insertPrenda({
         image_url: imageUrl,
+        nombre: nombre.trim() || undefined,
         category,
         clima,
         formality,
@@ -383,6 +344,19 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
           transition: 'opacity 0.3s ease',
         }}
       >
+        {/* Nombre — optional readable name Luci will use */}
+        <div className="form-group">
+          <label className="form-label">Nombre (opcional)</label>
+          <input
+            type="text"
+            placeholder="Ej: Vestido negro Ruby"
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            maxLength={60}
+            style={{ width: '100%', padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--panel-border)', backgroundColor: 'var(--bg-color)', color: 'var(--text-primary)', fontFamily: 'var(--font-sans)', fontSize: '0.9rem', outline: 'none', boxSizing: 'border-box' }}
+          />
+        </div>
+
         {/* Category — icon chips */}
         <div className="form-group">
           <label className="form-label">Categoría</label>
@@ -530,36 +504,3 @@ export function UploadForm({ onSuccess }: UploadFormProps) {
   );
 }
 
-// ── Child component: Color Picker Row (multi-select preset swatches) ───────────
-
-interface ColorPickerRowProps {
-  selected: string[];
-  onToggle: (hex: string) => void;
-}
-
-function ColorPickerRow({ selected, onToggle }: ColorPickerRowProps) {
-  return (
-    <div className="color-picker">
-      {PRESETS_COLORS.map(col => (
-        <button
-          key={col.hex}
-          type="button"
-          className={`color-dot ${selected.includes(col.hex) ? 'selected' : ''}`}
-          style={{ backgroundColor: col.hex, border: col.hasBorder ? '1px solid #CCC' : undefined }}
-          onClick={() => onToggle(col.hex)}
-          title={col.name}
-          aria-label={col.name}
-          aria-pressed={selected.includes(col.hex)}
-        >
-          {selected.includes(col.hex) && (
-            <Check
-              size={14}
-              color={LIGHT_SWATCHES.has(col.hex) ? '#1A1A1A' : '#FFFFFF'}
-              style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
-            />
-          )}
-        </button>
-      ))}
-    </div>
-  );
-}

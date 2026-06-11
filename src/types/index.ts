@@ -10,6 +10,7 @@ export interface Prenda {
   colors: string[];            // combined union (primary ∪ secondary) — matching & display
   primary_colors?: string[];   // dominant colours
   secondary_colors?: string[]; // accent colours
+  nombre?: string;             // user-given name (e.g. "Vestido negro Ruby") — how Luci refers to it
   notas_ia?: string;
   tags_ia?: string[];
   created_at?: string;

@@ -79,6 +79,7 @@ function normalizePrenda(raw: unknown): Prenda {
     colors,
     primary_colors,
     secondary_colors,
+    nombre:    typeof r.nombre    === 'string' ? r.nombre    : undefined,
     notas_ia:  typeof r.notas_ia  === 'string' ? r.notas_ia  : undefined,
     tags_ia:   toStringArray(r.tags_ia),
     created_at: typeof r.created_at === 'string' ? r.created_at : new Date().toISOString(),
@@ -429,6 +430,39 @@ export async function insertPrenda(prenda: Omit<Prenda, 'id' | 'created_at'>): P
   list.unshift(newPrenda);
   localStorage.setItem('wardrobe_prendas', JSON.stringify(list));
   return newPrenda;
+}
+
+// Editable garment fields (everything except id/created_at/image_url/ai metadata).
+export type PrendaPatch = Partial<
+  Pick<Prenda, 'nombre' | 'category' | 'clima' | 'formality' | 'styles' | 'colors' | 'primary_colors' | 'secondary_colors'>
+>;
+
+export async function updatePrenda(id: string, patch: PrendaPatch): Promise<Prenda> {
+  if (isSupabaseConfigured && supabase) {
+    try {
+      const { data, error } = await supabase
+        .from('prendas')
+        .update(patch)
+        .eq('id', id)
+        .select()
+        .single();
+      if (error) throw error;
+      return normalizePrenda(data);
+    } catch (err) {
+      console.error('Supabase updatePrenda failed, falling back to LocalStorage', err);
+    }
+  }
+
+  // LocalStorage fallback — patch the matching record in place
+  initLocalStorage();
+  const raw  = localStorage.getItem('wardrobe_prendas');
+  const list: Prenda[] = raw ? (JSON.parse(raw) as unknown[]).map(normalizePrenda) : [];
+  const idx  = list.findIndex(item => item.id === id);
+  if (idx === -1) throw new Error('Prenda no encontrada');
+  const updated = normalizePrenda({ ...list[idx], ...patch });
+  list[idx] = updated;
+  localStorage.setItem('wardrobe_prendas', JSON.stringify(list));
+  return updated;
 }
 
 export async function deletePrenda(id: string): Promise<void> {

@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Trash2, ShoppingBag, Sparkles, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, LayoutGrid, ChevronDown, Wand2 } from 'lucide-react';
+import { Trash2, ShoppingBag, Sparkles, Shirt, RectangleHorizontal, PersonStanding, Layers, Footprints, LayoutGrid, ChevronDown, Wand2, Pencil } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { Prenda } from '../types';
 import { deletePrenda } from '../lib/db';
+import { EditPrendaModal } from './EditPrendaModal';
 
 interface ClosetViewProps {
   items: Prenda[];
@@ -34,6 +35,7 @@ const CATEGORY_LABEL: Record<Prenda['category'], string> = {
 export function ClosetView({ items, onRefresh, onGenerateWithPrenda }: ClosetViewProps) {
   const [activeTab, setActiveTab] = useState<string>('todos');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Prenda | null>(null);
 
   // Count per tab — computed inline, array is small so no useMemo needed
   const getCount = (category: string) =>
@@ -129,6 +131,29 @@ export function ClosetView({ items, onRefresh, onGenerateWithPrenda }: ClosetVie
                 >
                   <Trash2 size={15} />
                 </button>
+                <button
+                  onClick={() => setEditing(item)}
+                  title="Editar prenda"
+                  aria-label="Editar prenda"
+                  style={{
+                    position: 'absolute',
+                    top: '8px',
+                    right: '42px',
+                    background: 'rgba(255, 255, 255, 0.9)',
+                    border: 'none',
+                    borderRadius: '50%',
+                    width: '28px',
+                    height: '28px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'var(--accent-color)',
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.12)',
+                  }}
+                >
+                  <Pencil size={14} />
+                </button>
                 {onGenerateWithPrenda && (
                   <button
                     onClick={() => onGenerateWithPrenda(item)}
@@ -157,6 +182,11 @@ export function ClosetView({ items, onRefresh, onGenerateWithPrenda }: ClosetVie
               </div>
 
               <div className="prenda-info">
+                {item.nombre && (
+                  <span style={{ display: 'block', fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', marginBottom: '2px', lineHeight: 1.25 }}>
+                    {item.nombre}
+                  </span>
+                )}
                 <span className="prenda-category">{CATEGORY_LABEL[item.category]}</span>
 
                 <div className="prenda-tags">
@@ -251,6 +281,14 @@ export function ClosetView({ items, onRefresh, onGenerateWithPrenda }: ClosetVie
             </div>
           ))}
         </div>
+      )}
+
+      {editing && (
+        <EditPrendaModal
+          prenda={editing}
+          onClose={() => setEditing(null)}
+          onSaved={onRefresh}
+        />
       )}
     </div>
   );

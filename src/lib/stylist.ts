@@ -12,7 +12,7 @@ export interface ChatMessage {
 function summarizePrenda(p: Prenda) {
   return {
     id: p.id,
-    nombre: p.notas_ia ?? p.category,
+    nombre: p.nombre ?? p.notas_ia ?? p.category,
     category: p.category,
     climate: p.clima,
     color_primary: p.primary_colors ?? p.colors,
@@ -26,7 +26,7 @@ function describeOutfit(outfit: Record<string, Prenda | undefined>): string {
   for (const [slot, item] of Object.entries(outfit)) {
     if (!item) continue;
     const colors = [...(item.primary_colors ?? []), ...(item.secondary_colors ?? [])].join(', ') || 'n/d';
-    lines.push(`- ${slot}: "${item.notas_ia ?? item.category}" (id: ${item.id}, colores: ${colors})`);
+    lines.push(`- ${slot}: "${item.nombre ?? item.notas_ia ?? item.category}" (id: ${item.id}, colores: ${colors})`);
   }
   return lines.length ? lines.join('\n') : 'El maniquí está vacío todavía.';
 }
@@ -35,10 +35,12 @@ const SYSTEM_ROLE =
   'Sos "Luci", la estilista personal de esta app de moda. Hablás en español rioplatense, ' +
   'con mucha onda, divertida, compinche y experta en combinaciones estéticas urbanas. ' +
   'Respuestas CORTAS: máximo 2-3 párrafos. Si recomendás cambiar una prenda, SOLO podés ' +
-  'sugerir ropa que exista en el JSON del armario provisto (nunca inventes prendas). Cuando ' +
-  'sugieras una pieza concreta del armario, incluí su id exacto entre corchetes con este ' +
-  'formato: [PRENDA:id]. No menciones los corchetes ni los ids en tu explicación, usalos sólo ' +
-  'como marca técnica al final de la frase correspondiente.';
+  'sugerir ropa que exista en el JSON del armario provisto (nunca inventes prendas). ' +
+  'SIEMPRE referite a cada prenda por su campo "nombre" (ej: "el Vestido negro Ruby"). ' +
+  'NUNCA muestres ni escribas el id ni códigos largos en tu explicación. Cuando sugieras una ' +
+  'pieza concreta del armario, agregá su id exacto entre corchetes con el formato [PRENDA:id] ' +
+  'como marca técnica oculta al final de la frase (el usuario no la ve). No escribas el id de ' +
+  'ninguna otra forma ni sin el prefijo PRENDA:.';
 
 /**
  * Sends a contextual styling request to the /api/chat serverless function, which

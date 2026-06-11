@@ -847,13 +847,25 @@ function StylistChat({ wardrobe, activeOutfit, filters, onApplyPick }: StylistCh
     setLoading(true);
     try {
       const reply = await askStylist(trimmed, wardrobe, activeOutfit, filters);
-      // Capture [PRENDA:id] tokens → auto-apply real wardrobe items to the mannequin.
-      const ids = Array.from(reply.matchAll(/\[PRENDA:([^\]]+)\]/g), m => m[1].trim());
+      // Capture garment markers → auto-apply to the mannequin, and strip any id that
+      // leaks into the text — both [PRENDA:id] and a bare [id] — so the user never sees it.
+      const ids: string[] = [];
+      const clean = reply
+        .replace(/\[([^\]]+)\]/g, (full, inner: string) => {
+          const id = inner.replace(/^PRENDA:/i, '').trim();
+          if (wardrobe.some(p => p.id === id)) {
+            ids.push(id);
+            return ''; // strip the marker / leaked id from the visible text
+          }
+          return full; // leave unrelated brackets untouched
+        })
+        .replace(/[ \t]{2,}/g, ' ')
+        .replace(/ +([,.!?…])/g, '$1') // tidy spaces left before punctuation
+        .trim();
       ids.forEach(id => {
         const pick = wardrobe.find(p => p.id === id);
         if (pick) onApplyPick(pick);
       });
-      const clean = reply.replace(/\[PRENDA:[^\]]+\]/g, '').replace(/[ \t]{2,}/g, ' ').trim();
       setMessages(prev => [...prev, { role: 'stylist', text: clean || '¡Listo! Te actualicé el look. ✨' }]);
     } catch (error) {
       console.error('[Stylist Error Debug]:', error);
