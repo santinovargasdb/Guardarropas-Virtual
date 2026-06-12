@@ -1,56 +1,41 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 640" fill="none">
-  <defs>
-    <linearGradient id="bodyDark" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#403B35"/>
-      <stop offset="1" stop-color="#221E1A"/>
-    </linearGradient>
-    <linearGradient id="skinGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#F4E9DD"/>
-      <stop offset="1" stop-color="#E7D3C0"/>
-    </linearGradient>
-    <linearGradient id="hairGrad" x1="0" y1="0" x2="0.15" y2="1">
-      <stop offset="0" stop-color="#171615"/>
-      <stop offset="1" stop-color="#040404"/>
-    </linearGradient>
-  </defs>
-
+  <!-- Matte solid silhouette: flat fills so overlapping limbs read as one body (no seams). -->
   <!-- soft ground shadow -->
-  <ellipse cx="150" cy="624" rx="64" ry="9" fill="#7A6450" opacity="0.18"/>
-
-  <!-- ── BODY (dark silhouette) ──────────────────────────────────────────── -->
-  <!-- arms with simple hands, spring from the shoulders and rest along the body -->
-  <path d="M121 138 C104 164 97 206 99 248 C100 286 105 320 110 346 C108 356 110 366 117 368 C124 369 127 360 125 350 C123 320 122 286 121 248 C121 200 123 180 131 146 Z" fill="url(#bodyDark)"/>
-  <path d="M179 138 C196 164 203 206 201 248 C200 286 195 320 190 346 C192 356 190 366 183 368 C176 369 173 360 175 350 C177 320 178 286 179 248 C179 200 177 180 169 146 Z" fill="url(#bodyDark)"/>
-
-  <!-- torso + hips: sloped shoulders, soft bust, narrow waist, full rounded hips -->
-  <path d="M150 116 C134 116 122 121 113 137 C104 160 102 185 108 211 C117 231 126 234 129 250 C103 283 99 315 106 346 C111 373 116 393 125 412 L175 412 C184 393 189 373 194 346 C201 315 197 283 171 250 C174 234 183 231 192 211 C198 185 196 160 187 137 C178 121 166 116 150 116 Z" fill="url(#bodyDark)"/>
+  <ellipse cx="150" cy="626" rx="60" ry="8" fill="#6E5A47" opacity="0.20"/>
 
   <!-- legs: full thighs tapering through the knee to slim ankles -->
-  <path d="M126 396 C120 432 120 462 123 490 C125 520 126 552 131 578 C132 587 140 587 141 578 C145 552 146 520 144 490 C147 462 147 432 142 396 Z" fill="url(#bodyDark)"/>
-  <path d="M174 396 C180 432 180 462 177 490 C175 520 174 552 169 578 C168 587 160 587 159 578 C155 552 154 520 156 490 C153 462 153 432 158 396 Z" fill="url(#bodyDark)"/>
+  <path d="M124 348 C116 400 116 450 120 496 C122 528 125 556 131 580 C132 590 142 590 143 580 C147 556 149 528 148 496 C151 450 151 400 144 348 Z" fill="#211E19"/>
+  <path d="M176 348 C184 400 184 450 180 496 C178 528 175 556 169 580 C168 590 158 590 157 580 C153 556 151 528 152 496 C149 450 149 400 156 348 Z" fill="#211E19"/>
 
   <!-- feet -->
-  <path d="M129 580 C126 591 131 598 140 597 C148 596 148 587 145 581 Z" fill="url(#bodyDark)"/>
-  <path d="M171 580 C174 591 169 598 160 597 C152 596 152 587 155 581 Z" fill="url(#bodyDark)"/>
+  <path d="M129 579 C125 592 130 601 142 600 C150 599 150 590 147 581 Z" fill="#211E19"/>
+  <path d="M171 579 C175 592 170 601 158 600 C150 599 150 590 153 581 Z" fill="#211E19"/>
 
-  <!-- skin neck -->
-  <path d="M143 84 C142 100 142 112 145 120 L155 120 C158 112 158 100 157 84 Z" fill="url(#skinGrad)"/>
+  <!-- torso + hips: sloped shoulders, soft bust, narrow waist, full rounded hips -->
+  <path d="M150 116 C133 116 121 122 112 138 C103 160 101 186 107 210 C116 230 125 234 128 248 C103 278 100 312 108 344 C111 354 115 360 122 364 L178 364 C185 360 189 354 192 344 C200 312 197 278 172 248 C175 234 184 230 193 210 C199 186 197 160 188 138 C179 122 167 116 150 116 Z" fill="#211E19"/>
 
-  <!-- ── HAIR: long, straight, jet black, falls vertically below the shoulders ─ -->
-  <path d="M150 16 C122 16 102 36 99 80 L99 232 C99 246 104 256 113 255 C120 254 123 240 123 214 L124 90 C127 58 138 47 150 46 C162 47 173 58 176 90 L177 214 C177 240 180 254 187 255 C196 256 201 246 201 232 L201 80 C198 36 178 16 150 16 Z" fill="url(#hairGrad)"/>
+  <!-- arms: smooth, spring from the shoulders, soft hands at the hips -->
+  <path d="M120 140 C104 162 97 200 99 242 C100 280 105 314 111 340 C109 350 111 361 119 362 C126 361 128 350 125 340 C123 312 121 280 120 244 C119 200 122 174 130 150 Z" fill="#211E19"/>
+  <path d="M180 140 C196 162 203 200 201 242 C200 280 195 314 189 340 C191 350 189 361 181 362 C174 361 172 350 175 340 C177 312 179 280 180 244 C181 200 178 174 170 150 Z" fill="#211E19"/>
 
-  <!-- skin face -->
-  <ellipse cx="150" cy="60" rx="27" ry="32" fill="url(#skinGrad)"/>
+  <!-- neck -->
+  <path d="M142 86 C141 100 141 110 144 118 L156 118 C159 110 159 100 158 86 Z" fill="#211E19"/>
+
+  <!-- head -->
+  <ellipse cx="150" cy="60" rx="27" ry="32" fill="#211E19"/>
+
+  <!-- ── HAIR: jet black (a shade deeper than the matte body), long & straight ── -->
+  <path d="M150 24 C128 24 110 42 107 80 L107 216 C107 231 111 240 118 239 C125 238 124 226 124 210 L124 94 C126 62 138 50 150 49 C162 50 174 62 176 94 L176 210 C176 226 175 238 182 239 C189 240 193 231 193 216 L193 80 C190 42 172 24 150 24 Z" fill="#0A0A0C"/>
 
   <!-- dense straight fringe over the forehead -->
-  <path d="M123 34 C134 27 166 27 177 34 C178 44 178 51 177 55 L173 55 L127 55 L123 55 C122 51 122 44 123 34 Z" fill="url(#hairGrad)"/>
+  <path d="M125 35 C136 28 164 28 175 35 C176 45 176 52 175 56 L171 56 L129 56 L125 56 C124 52 124 45 125 35 Z" fill="#0A0A0C"/>
 
-  <!-- hair sheen: thin highlights that define the long straight strands -->
-  <g stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2.5" fill="none" stroke-linecap="round">
-    <path d="M103 74 L102 238"/>
-    <path d="M112 62 L111 244"/>
-    <path d="M197 74 L198 238"/>
-    <path d="M188 62 L189 244"/>
+  <!-- hair sheen: soft highlights for a fluid, jet-black look -->
+  <g stroke="#FFFFFF" stroke-opacity="0.10" stroke-width="2.2" fill="none" stroke-linecap="round">
+    <path d="M112 78 L111 222"/>
+    <path d="M119 66 L118 232"/>
+    <path d="M188 78 L189 222"/>
+    <path d="M181 66 L182 232"/>
   </g>
-  <path d="M132 33 C145 29 156 29 168 33" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M132 34 C145 29 155 29 168 34" stroke="#FFFFFF" stroke-opacity="0.08" stroke-width="2" fill="none" stroke-linecap="round"/>
 </svg>
